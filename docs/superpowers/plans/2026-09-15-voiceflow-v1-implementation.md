@@ -65,18 +65,93 @@ VOICE APP/                              (repo root)
 
 ---
 
-## Task 1: Repo and package scaffold
+## Task 1: Repo scaffold and vendored whisper.cpp
+
+> **Ruling R10 (2026-09-15):** upstream whisper.cpp no longer ships a `Package.swift` (404 on `master`; the last tag with one, v1.7.4, is only a `pkgConfig` systemLibrary that links a prebuilt system library rather than building from source), and `ggml-org/whisper.spm` is stale (newest tag 1.6.2, Metal disabled — which would make Task 5's latency number unrepresentative on this arm64 Mac). So whisper.cpp is **vendored at pinned tag v1.9.4 and built from source into static libraries** by a committed script, then linked into `VoiceFlowCore`. Static, not Homebrew-dylib, so the shipped `.app` has no runtime dependency on Homebrew.
 
 **Files:**
 - Create: `Package.swift`
-- Create: `Sources/VoiceFlowCore/.gitkeep` (placeholder, removed once Task 2 adds real files)
+- Create: `scripts/build-whisper.sh`
+- Create: `Sources/CWhisper/module.modulemap`
+- Create: `Sources/VoiceFlowCore/VoiceFlowCore.swift`
 - Create: `Sources/LatencySpike/main.swift`
 - Create: `Tests/VoiceFlowCoreTests/PackageScaffoldTests.swift`
+- Modify: `.gitignore` (ignore `Vendor/`)
 
 **Interfaces:**
-- Produces: a buildable `VoiceFlowCore` library target and `LatencySpike` executable target that later tasks add real code to.
+- Produces: a buildable `VoiceFlowCore` library target that can `import CWhisper` and call whisper.cpp's C API (`whisper_init_from_file`, `whisper_full`, …), plus a `LatencySpike` executable target. Task 2 consumes `CWhisper` directly.
 
-- [ ] **Step 1: Create `Package.swift` at the repo root**
+- [ ] **Step 1: Write the whisper.cpp vendoring script**
+
+`scripts/build-whisper.sh`:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+WHISPER_TAG="v1.9.4"
+SRC_DIR="Vendor/whisper.cpp-src"
+OUT_DIR="Vendor/whisper"
+
+if ! command -v cmake >/dev/null 2>&1; then
+    echo "cmake is required to build whisper.cpp. Install it with: brew install cmake"
+    exit 1
+fi
+
+if [ ! -d "$SRC_DIR" ]; then
+    echo "Cloning whisper.cpp $WHISPER_TAG..."
+    git clone --depth 1 --branch "$WHISPER_TAG" https://github.com/ggml-org/whisper.cpp "$SRC_DIR"
+fi
+
+echo "Building whisper.cpp (static, Metal embedded)..."
+cmake -S "$SRC_DIR" -B "$SRC_DIR/build" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_METAL=ON \
+    -DGGML_METAL_EMBED_LIBRARY=ON \
+    -DGGML_ACCELERATE=ON \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DWHISPER_BUILD_EXAMPLES=OFF \
+    -DCMAKE_INSTALL_PREFIX="$(pwd)/$OUT_DIR"
+
+cmake --build "$SRC_DIR/build" --config Release -j"$(sysctl -n hw.ncpu)"
+cmake --install "$SRC_DIR/build"
+
+echo "Static libraries installed in $OUT_DIR/lib:"
+ls -1 "$OUT_DIR/lib"
+echo "Headers installed in $OUT_DIR/include:"
+ls -1 "$OUT_DIR/include"
+```
+
+```bash
+chmod +x scripts/build-whisper.sh
+```
+
+> `GGML_METAL_EMBED_LIBRARY=ON` compiles the Metal shaders into the binary so there is no runtime `.metallib` to locate inside the `.app` bundle. `BUILD_SHARED_LIBS=OFF` gives static archives, so the app carries whisper.cpp inside its own executable.
+
+- [ ] **Step 2: Run the vendoring script and record what it actually produced**
+
+```bash
+brew install cmake     # build-time only; not needed at runtime
+./scripts/build-whisper.sh
+```
+
+Expected: `Vendor/whisper/include/whisper.h` exists, and `Vendor/whisper/lib/` contains `libwhisper.a` plus the `libggml*.a` family. **Write down the exact library filenames the script printed** — Step 4's linker flags must list the libraries that actually exist, never a guessed set.
+
+- [ ] **Step 3: Write the module map exposing whisper.h to Swift**
+
+`Sources/CWhisper/module.modulemap`:
+
+```
+module CWhisper {
+    header "../../Vendor/whisper/include/whisper.h"
+    export *
+}
+```
+
+- [ ] **Step 4: Create `Package.swift` at the repo root**
 
 ```swift
 // swift-tools-version:5.9
@@ -84,21 +159,39 @@ import PackageDescription
 
 let package = Package(
     name: "VoiceFlow",
-    platforms: [.macOS(.v13)],
+    // macOS 14, not 13: the Testing.framework shipped with the Command Line
+    // Tools is built for 14.0, and linking it into a 13.0 target warns.
+    // v1 is local-only, so raising the floor costs nothing.
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "VoiceFlowCore", targets: ["VoiceFlowCore"]),
         .executable(name: "LatencySpike", targets: ["LatencySpike"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ggerganov/whisper.cpp", branch: "master"),
         .package(url: "https://github.com/soffes/HotKey", from: "0.2.1")
     ],
     targets: [
+        .systemLibrary(name: "CWhisper", path: "Sources/CWhisper"),
         .target(
             name: "VoiceFlowCore",
             dependencies: [
-                .product(name: "whisper", package: "whisper.cpp"),
+                "CWhisper",
                 .product(name: "HotKey", package: "HotKey")
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-LVendor/whisper/lib",
+                    "-lwhisper",
+                    "-lggml",
+                    "-lggml-base",
+                    "-lggml-cpu",
+                    "-lggml-blas",
+                    "-lggml-metal"
+                ]),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("Foundation")
             ]
         ),
         .executableTarget(
@@ -113,13 +206,20 @@ let package = Package(
 )
 ```
 
-> Note for the implementer: `whisper.cpp`'s SPM product may not be named exactly `whisper` depending on the checked-out revision — if `swift build` fails resolving that product name, open the fetched package's own `Package.swift` (under `.build/checkouts/whisper.cpp/Package.swift`) and use whatever product name it declares. This is a self-correcting failure (build breaks loudly), not a silent risk.
+> The `-l` list above must match the archives Step 2 actually produced — adjust it to the real filenames (`libggml-cpu.a` → `-lggml-cpu`, and so on), dropping any that don't exist and adding any that do. `.unsafeFlags` is permitted here because VoiceFlow is the root package, not a consumed dependency. `-LVendor/whisper/lib` is relative, so `swift build` must be run from the package root.
 
-- [ ] **Step 2: Create a placeholder source file so the library target has something to compile**
+- [ ] **Step 5: Create the library's first source file**
 
-`Sources/VoiceFlowCore/.gitkeep` — empty file. (SPM requires at least one source file per target; Task 2 replaces this need immediately.)
+`Sources/VoiceFlowCore/VoiceFlowCore.swift`:
 
-- [ ] **Step 3: Create a placeholder executable entry point**
+```swift
+/// Version of the VoiceFlowCore library.
+public let voiceFlowCoreVersion = "1.0.0"
+```
+
+(SwiftPM refuses to build a target with no Swift sources, so this file is what makes the library target valid until Task 2 adds real code.)
+
+- [ ] **Step 6: Create a placeholder executable entry point**
 
 `Sources/LatencySpike/main.swift`:
 
@@ -127,36 +227,57 @@ let package = Package(
 print("VoiceFlow latency spike — scaffold OK")
 ```
 
-- [ ] **Step 4: Write a trivial passing test to confirm the test target wires up**
+- [ ] **Step 7: Write a test that proves whisper.cpp is actually linked**
 
 `Tests/VoiceFlowCoreTests/PackageScaffoldTests.swift`:
 
 ```swift
-import XCTest
+import Testing
+import CWhisper
+@testable import VoiceFlowCore
 
-final class PackageScaffoldTests: XCTestCase {
-    func testScaffoldBuilds() {
-        XCTAssertTrue(true)
+@Suite struct PackageScaffoldTests {
+    @Test func coreVersionIsExposed() {
+        #expect(voiceFlowCoreVersion == "1.0.0")
+    }
+
+    @Test func whisperLibraryIsLinked() {
+        // whisper_print_system_info returns a C string describing the build.
+        // Calling it proves the vendored static library is linked and callable.
+        let info = String(cString: whisper_print_system_info())
+        #expect(!info.isEmpty)
     }
 }
 ```
 
-- [ ] **Step 5: Build and run**
+> **Ruling R13:** tests use **Swift Testing** (`import Testing`, `@Test`, `#expect`), not XCTest. XCTest ships only inside Xcode.app and this machine has Command Line Tools only — `xcrun --find xctest` fails and no `XCTest.framework` exists on disk. Swift Testing does ship with the CLT (`/Library/Developer/CommandLineTools/Library/Developer/Frameworks/Testing.framework`) and was verified working here by building and running a throwaway package: `swift test` reported "1 test passed". This keeps the agreed testing strategy intact — automated tests for isolatable logic, manual verification for system integration — with the framework that actually exists in this environment.
 
-Run: `cd "/Users/andreariganello/Desktop/AGENCY /VOICE APP" && swift build`
-Expected: Package dependencies resolve (whisper.cpp, HotKey) and build succeeds.
+- [ ] **Step 8: Ignore the vendored sources**
+
+Add to `.gitignore`:
+
+```
+Vendor/
+```
+
+The vendoring script is committed; the multi-hundred-megabyte checkout and build output are not. Anyone cloning the repo runs `./scripts/build-whisper.sh` once.
+
+- [ ] **Step 9: Build and run**
+
+Run: `swift build`
+Expected: resolves HotKey, compiles, links against the vendored static libraries.
 
 Run: `swift test`
-Expected: 1 test, `testScaffoldBuilds`, passes.
+Expected: 2 tests pass, including `testWhisperLibraryIsLinked`.
 
 Run: `swift run LatencySpike`
 Expected: prints `VoiceFlow latency spike — scaffold OK`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add Package.swift Package.resolved Sources Tests
-git commit -m "chore: scaffold VoiceFlowCore package and LatencySpike executable"
+git add Package.swift Package.resolved Sources Tests scripts/build-whisper.sh .gitignore
+git commit -m "chore: scaffold VoiceFlowCore package with vendored whisper.cpp"
 ```
 
 ---
@@ -168,7 +289,7 @@ git commit -m "chore: scaffold VoiceFlowCore package and LatencySpike executable
 - Test: `Tests/VoiceFlowCoreTests/WhisperEngineTests.swift`
 
 **Interfaces:**
-- Consumes: `whisper` product from the whisper.cpp SPM dependency (Task 1).
+- Consumes: the `CWhisper` module map target over the vendored whisper.cpp headers (Task 1).
 - Produces: `WhisperEngine(modelPath: String) throws`, `func transcribe(samples: [Float], language: String) throws -> TranscriptionResult`, `TranscriptionResult { text: String, durationSeconds: Double }`, `WhisperEngineError`. Task 5 (spike) and Task 10 (app) both call `transcribe(samples:language:)`.
 
 - [ ] **Step 1: Write the failing test for the pure post-processing logic**
@@ -176,20 +297,20 @@ git commit -m "chore: scaffold VoiceFlowCore package and LatencySpike executable
 The actual whisper.cpp inference needs a real `.bin` model file (100+ MB, not something to fetch in a unit test), so only the trimming logic is unit-tested here; the full inference path is verified manually in Task 5's spike run.
 
 ```swift
-import XCTest
+import Testing
 @testable import VoiceFlowCore
 
-final class WhisperEngineTests: XCTestCase {
-    func testTrimRemovesLeadingAndTrailingWhitespace() {
-        XCTAssertEqual(WhisperEngine.trim("  ciao mondo  \n"), "ciao mondo")
+@Suite struct WhisperEngineTests {
+    @Test func trimRemovesLeadingAndTrailingWhitespace() {
+        #expect(WhisperEngine.trim("  ciao mondo  \n") == "ciao mondo")
     }
 
-    func testTrimOfEmptyStringIsEmpty() {
-        XCTAssertEqual(WhisperEngine.trim(""), "")
+    @Test func trimOfEmptyStringIsEmpty() {
+        #expect(WhisperEngine.trim("") == "")
     }
 
-    func testTrimOfWhitespaceOnlyIsEmpty() {
-        XCTAssertEqual(WhisperEngine.trim("   \n\t "), "")
+    @Test func trimOfWhitespaceOnlyIsEmpty() {
+        #expect(WhisperEngine.trim("   \n\t ") == "")
     }
 }
 ```
@@ -205,7 +326,7 @@ Expected: FAIL — `WhisperEngine` does not exist yet.
 
 ```swift
 import Foundation
-import whisper
+import CWhisper
 
 public struct TranscriptionResult {
     public let text: String
@@ -221,7 +342,11 @@ public final class WhisperEngine {
     private let context: OpaquePointer
 
     public init(modelPath: String) throws {
-        guard let ctx = whisper_init_from_file(modelPath) else {
+        // `whisper_init_from_file` is deprecated in whisper.cpp v1.9.4; the
+        // params variant is the supported entry point, and its default
+        // `use_gpu` lets inference reach Metal on Apple Silicon.
+        let contextParams = whisper_context_default_params()
+        guard let ctx = whisper_init_from_file_with_params(modelPath, contextParams) else {
             throw WhisperEngineError.modelLoadFailed(path: modelPath)
         }
         self.context = ctx
@@ -305,12 +430,12 @@ git commit -m "feat: add WhisperEngine wrapper around whisper.cpp"
 Live microphone capture can't run in a unit test (no mic in CI, no user present), so this test targets the resampling function in isolation using a synthetic buffer — no `AVAudioEngine` involved.
 
 ```swift
-import XCTest
+import Testing
 import AVFoundation
 @testable import VoiceFlowCore
 
-final class AudioCaptureTests: XCTestCase {
-    func testResampleDownsamples44100To16000() throws {
+@Suite struct AudioCaptureTests {
+    @Test func resampleDownsamples44100To16000() throws {
         let inputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100, channels: 1, interleaved: false)!
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
 
@@ -324,11 +449,11 @@ final class AudioCaptureTests: XCTestCase {
         let output = AudioCapture.resample(buffer: buffer, from: inputFormat, to: targetFormat)
 
         // ~1 second of audio at 16kHz should be close to 16000 samples.
-        XCTAssertGreaterThan(output.count, 15000)
-        XCTAssertLessThan(output.count, 17000)
+        #expect(output.count > 15000)
+        #expect(output.count < 17000)
     }
 
-    func testResampleOfEmptyBufferIsEmpty() throws {
+    @Test func resampleOfEmptyBufferIsEmpty() throws {
         let inputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100, channels: 1, interleaved: false)!
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
         let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: 0)!
@@ -336,7 +461,7 @@ final class AudioCaptureTests: XCTestCase {
 
         let output = AudioCapture.resample(buffer: buffer, from: inputFormat, to: targetFormat)
 
-        XCTAssertEqual(output.count, 0)
+        #expect(output.count == 0)
     }
 }
 ```
@@ -633,49 +758,50 @@ git commit -m "feat: build hotkey-to-transcript latency spike"
 - [ ] **Step 1: Write the failing tests for path resolution and checksum verification**
 
 ```swift
-import XCTest
+import Foundation
+import Testing
 @testable import VoiceFlowCore
 
-final class ModelManagerTests: XCTestCase {
-    var tempDir: URL!
-    var manager: ModelManager!
+@Suite final class ModelManagerTests {
+    let tempDir: URL
+    let manager: ModelManager
 
-    override func setUp() {
-        super.setUp()
+    // Swift Testing creates a fresh suite instance per test, so init/deinit
+    // are the per-test setup and teardown.
+    init() {
         tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         manager = ModelManager(modelsDirectory: tempDir)
     }
 
-    override func tearDown() {
+    deinit {
         try? FileManager.default.removeItem(at: tempDir)
-        super.tearDown()
     }
 
-    func testLocalPathAppendsFileNameToModelsDirectory() {
+    @Test func localPathAppendsFileNameToModelsDirectory() {
         let model = ModelInfo(name: "base", fileName: "ggml-base.bin", downloadURL: URL(string: "https://example.com/ggml-base.bin")!, sha256: "irrelevant-for-this-test")
-        XCTAssertEqual(manager.localPath(for: model), tempDir.appendingPathComponent("ggml-base.bin"))
+        #expect(manager.localPath(for: model) == tempDir.appendingPathComponent("ggml-base.bin"))
     }
 
-    func testIsModelPresentAndValidIsFalseWhenFileMissing() {
+    @Test func isModelPresentAndValidIsFalseWhenFileMissing() {
         let model = ModelInfo(name: "base", fileName: "missing.bin", downloadURL: URL(string: "https://example.com/missing.bin")!, sha256: "does-not-matter")
-        XCTAssertFalse(manager.isModelPresentAndValid(model))
+        #expect(!manager.isModelPresentAndValid(model))
     }
 
-    func testIsModelPresentAndValidIsFalseWhenChecksumMismatches() throws {
+    @Test func isModelPresentAndValidIsFalseWhenChecksumMismatches() throws {
         let fileURL = tempDir.appendingPathComponent("corrupt.bin")
         try "not the real model".write(to: fileURL, atomically: true, encoding: .utf8)
-        let model = ModelInfo(name: "base", fileName: "corrupt.bin", downloadURL: URL(string: "https://example.com/corrupt.bin")!, sha256: "0000000000000000000000000000000000000000000000000000000000000")
-        XCTAssertFalse(manager.isModelPresentAndValid(model))
+        let model = ModelInfo(name: "base", fileName: "corrupt.bin", downloadURL: URL(string: "https://example.com/corrupt.bin")!, sha256: "0000000000000000000000000000000000000000000000000000000000000000")
+        #expect(!manager.isModelPresentAndValid(model))
     }
 
-    func testIsModelPresentAndValidIsTrueWhenChecksumMatches() throws {
+    @Test func isModelPresentAndValidIsTrueWhenChecksumMatches() throws {
         let fileURL = tempDir.appendingPathComponent("fixture.bin")
         try "voiceflow-test-fixture\n".write(to: fileURL, atomically: true, encoding: .utf8)
         // Real SHA256 of the literal bytes "voiceflow-test-fixture\n", computed with:
         // printf 'voiceflow-test-fixture\n' | shasum -a 256
-        let model = ModelInfo(name: "fixture", fileName: "fixture.bin", downloadURL: URL(string: "https://example.com/fixture.bin")!, sha256: "f8a7289ca2e97501bf779dfc71be00dda2b3e4bdecc94a0eef00451e643e04b")
-        XCTAssertTrue(manager.isModelPresentAndValid(model))
+        let model = ModelInfo(name: "fixture", fileName: "fixture.bin", downloadURL: URL(string: "https://example.com/fixture.bin")!, sha256: "f8a7289ca2e97501bf779dfc71be00dda2b3e4bdecc94a0eef00451e643e04b3")
+        #expect(manager.isModelPresentAndValid(model))
     }
 }
 ```
@@ -826,6 +952,8 @@ Paste the two real hashes into `ModelManager.knownModels` in place of `VERIFY_AN
 
 Temporarily call `ModelManager().download(ModelManager.knownModels[0], progress: { print($0) }, completion: { print($0) })` from `LatencySpike/main.swift`, run it, confirm the progress callback fires with increasing values and the file lands in `~/Library/Application Support/VoiceFlow/models/ggml-base.bin`. Remove the temporary call afterward.
 
+> **Ruling R6:** insert this temporary call *before* `RunLoop.main.run()` in the spike's `main.swift`. After Task 5 that file ends in `RunLoop.main.run()`, which never returns — anything appended after it would never execute, so the check would silently prove nothing.
+
 - [ ] **Step 7: Commit**
 
 ```bash
@@ -847,45 +975,53 @@ git commit -m "feat: add ModelManager for model storage, checksum, and download"
 - [ ] **Step 1: Write the failing tests**
 
 ```swift
-import XCTest
+import Foundation
+import Testing
 @testable import VoiceFlowCore
 
-final class SettingsStoreTests: XCTestCase {
-    var defaults: UserDefaults!
-    var store: SettingsStore!
+// .serialized because every test in this suite shares one UserDefaults
+// domain — running them concurrently would let one test's reset wipe
+// another's writes mid-assertion.
+@Suite(.serialized) final class SettingsStoreTests {
+    private static let suiteName = "com.voiceflow.tests.settings"
+    let defaults: UserDefaults
+    let store: SettingsStore
 
-    override func setUp() {
-        super.setUp()
-        defaults = UserDefaults(suiteName: #file)!
-        defaults.removePersistentDomain(forName: #file)
+    init() {
+        defaults = UserDefaults(suiteName: Self.suiteName)!
+        defaults.removePersistentDomain(forName: Self.suiteName)
         store = SettingsStore(defaults: defaults)
     }
 
-    func testDefaultModelIsBase() {
-        XCTAssertEqual(store.model, .base)
+    deinit {
+        defaults.removePersistentDomain(forName: Self.suiteName)
     }
 
-    func testDefaultLanguageIsItalian() {
-        XCTAssertEqual(store.language, .italian)
+    @Test func defaultModelIsBase() {
+        #expect(store.model == .base)
     }
 
-    func testDefaultLaunchAtLoginIsFalse() {
-        XCTAssertFalse(store.launchAtLogin)
+    @Test func defaultLanguageIsItalian() {
+        #expect(store.language == .italian)
     }
 
-    func testModelRoundTrips() {
+    @Test func defaultLaunchAtLoginIsFalse() {
+        #expect(!store.launchAtLogin)
+    }
+
+    @Test func modelRoundTrips() {
         store.model = .small
-        XCTAssertEqual(store.model, .small)
+        #expect(store.model == .small)
     }
 
-    func testLanguageRoundTrips() {
+    @Test func languageRoundTrips() {
         store.language = .english
-        XCTAssertEqual(store.language, .english)
+        #expect(store.language == .english)
     }
 
-    func testLaunchAtLoginRoundTrips() {
+    @Test func launchAtLoginRoundTrips() {
         store.launchAtLogin = true
-        XCTAssertTrue(store.launchAtLogin)
+        #expect(store.launchAtLogin)
     }
 }
 ```
@@ -1244,8 +1380,25 @@ final class StatusBarController {
     init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateIcon()
+        requestMicrophoneAccessIfNeeded()
         loadModelIfPresent()
         registerHotkey()
+    }
+
+    /// Ruling R7: ask for microphone access at launch, not mid-dictation.
+    /// On a fresh install the status is `.notDetermined`; asking while the
+    /// user holds the push-to-talk hotkey would pop the system dialog, and by
+    /// the time they answered it they'd have released the key — leaving the
+    /// state machine stuck in `.listening` with no release event coming.
+    private func requestMicrophoneAccessIfNeeded() {
+        guard permissionsManager.microphoneStatus() == .notDetermined else { return }
+        permissionsManager.requestMicrophoneAccess { granted in
+            DispatchQueue.main.async { [weak self] in
+                if !granted {
+                    self?.state = .error("microphone-permission")
+                }
+            }
+        }
     }
 
     private func updateIcon() {
@@ -1309,8 +1462,16 @@ final class StatusBarController {
             guard let self else { return }
             do {
                 let result = try whisperEngine.transcribe(samples: samples, language: self.settingsStore.language.rawValue)
-                try self.textInjector.inject(result.text)
-                DispatchQueue.main.async { self.state = .idle }
+                // Injection drives the Accessibility API and posts CGEvents,
+                // both of which belong on the main thread.
+                DispatchQueue.main.async {
+                    do {
+                        try self.textInjector.inject(result.text)
+                        self.state = .idle
+                    } catch {
+                        self.state = .error("accessibility-permission")
+                    }
+                }
             } catch {
                 DispatchQueue.main.async { self.state = .error("transcription-failed") }
             }
@@ -1665,30 +1826,52 @@ private func registerHotkey() {
 
 Note the real constraint before implementing: whisper.cpp's `whisper_full` call is synchronous and blocking — there's no built-in mid-inference cancellation used here, so a "timeout" can only update the UI early, not stop the underlying computation. Document this honestly rather than implying true cancellation. Change `finishDictation()`'s background block (Task 10):
 
+**Ruling R9:** the timeout flag is read and written from two different threads (the timer fires on the main queue, the worker runs on a background queue). A bare captured `var` there is a data race. Confine the flag to the main queue instead — every read and write of `timedOut` below happens in a main-queue block, and the worker asks the main queue for the verdict once inference returns.
+
 ```swift
+// Add as a stored property on StatusBarController — only ever touched on the main queue:
+private var dictationTimedOut = false
+
+// In finishDictation(), replacing the background block from Task 10:
+dictationTimedOut = false
+let timeoutWorkItem = DispatchWorkItem { [weak self] in
+    guard let self else { return }
+    self.dictationTimedOut = true
+    self.state = .error("transcription-timeout")
+}
+DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeoutWorkItem)
+
 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
     guard let self else { return }
-    var timedOut = false
-    let timeoutWorkItem = DispatchWorkItem { [weak self] in
-        timedOut = true
-        DispatchQueue.main.async { self?.state = .error("transcription-timeout") }
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeoutWorkItem)
-
     do {
         let result = try whisperEngine.transcribe(samples: samples, language: self.settingsStore.language.rawValue)
-        timeoutWorkItem.cancel()
-        guard !timedOut else { return } // UI already moved on; drop the late result
-        try self.textInjector.inject(result.text)
-        DispatchQueue.main.async { self.state = .idle }
+        DispatchQueue.main.async {
+            timeoutWorkItem.cancel()
+            // The UI already reported a timeout; drop the late result rather
+            // than injecting text the user has stopped expecting.
+            guard !self.dictationTimedOut else { return }
+            do {
+                try self.textInjector.inject(result.text)
+                self.state = .idle
+            } catch {
+                self.state = .error("accessibility-permission")
+            }
+        }
     } catch {
-        timeoutWorkItem.cancel()
-        DispatchQueue.main.async { self.state = .error("transcription-failed") }
+        DispatchQueue.main.async {
+            timeoutWorkItem.cancel()
+            guard !self.dictationTimedOut else { return }
+            self.state = .error("transcription-failed")
+        }
     }
 }
 ```
 
+> Injecting text moved onto the main queue too: `TextInjector` drives the Accessibility API and posts `CGEvent`s, which belong on the main thread. An injection failure now maps to the Accessibility-permission alert rather than being swallowed as a generic transcription failure.
+
 Add a case for `"transcription-timeout"` to the `presentAlert(for:)` switch from Step 1, reusing the `"transcription-failed"` copy.
+
+Honest limitation to keep in the code as a comment: `whisper_full` is synchronous and is not aborted here, so the timeout changes what the UI reports, not what the CPU is still doing. Do not word it as if inference were cancelled.
 
 - [ ] **Step 7: Build, package, and run**
 

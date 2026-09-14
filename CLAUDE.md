@@ -57,16 +57,33 @@ billing/licensing.
 
 ## Comandi
 
-Da compilare dopo il primo scaffold Xcode. Indicativamente:
+**Questa macchina ha solo gli Xcode Command Line Tools, non Xcode.app.**
+Quindi niente `.xcodeproj` e niente `xcodebuild`: tutto passa da Swift
+Package Manager. L'app viene assemblata in un vero `.app` da uno script.
 
 ```bash
-open VoiceFlow.xcodeproj      # apri il progetto in Xcode
-xcodebuild -scheme VoiceFlow build   # build da riga di comando
+swift build                      # build di tutto
+swift test                       # esegue la suite di test
+swift test --filter SettingsStoreTests   # un singolo gruppo di test
+./scripts/build-whisper.sh       # vendorizza e compila whisper.cpp (una tantum)
+./scripts/package-app.sh         # release + assembla dist/VoiceFlow.app
+open dist/VoiceFlow.app          # lancia l'app impacchettata
+swift run LatencySpike <modello> # spike di latenza, richiede un .bin ggml
 ```
 
-**Nessun test runner è configurato.** Se servono unit test, la scelta
-(XCTest è lo standard per progetti Swift/Xcode) va confermata esplicitamente
-e scritta qui insieme al comando per lanciare un singolo test.
+**Test runner: Swift Testing** (`import Testing`, `@Test`, `#expect`), non
+XCTest. XCTest è distribuito solo dentro Xcode.app e qui non esiste;
+`Testing.framework` invece arriva con i Command Line Tools e funziona.
+
+Vale la divisione decisa all'inizio: test automatici per la logica isolabile
+(settings, checksum, resampling, post-processing del testo), verifica
+manuale per ciò che tocca sistema e hardware (hotkey globale, microfono,
+permessi, iniezione testo).
+
+**Non testare l'app con `swift run VoiceFlowApp`**: `LSUIElement` e
+`NSMicrophoneUsageDescription` stanno nell'`Info.plist`, che ha effetto solo
+dentro il bundle `.app`. Senza, il processo crasha appena chiede il
+microfono.
 
 ## Convenzioni
 
