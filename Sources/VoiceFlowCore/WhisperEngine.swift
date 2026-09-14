@@ -30,6 +30,12 @@ public final class WhisperEngine {
     }
 
     public func transcribe(samples: [Float], language: String) throws -> TranscriptionResult {
+        // Nothing captured (hotkey tapped without speaking): don't hand
+        // whisper a null buffer, just report an empty transcription.
+        guard !samples.isEmpty else {
+            return TranscriptionResult(text: "", durationSeconds: 0)
+        }
+
         let start = Date()
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         params.print_progress = false
@@ -46,9 +52,12 @@ public final class WhisperEngine {
         let segmentCount = whisper_full_n_segments(context)
         var text = ""
         for i in 0..<segmentCount {
-            if let cText = whisper_full_get_segment_text(context, i) {
-                text += String(cString: cText)
+            // A null segment after a successful whisper_full is a whisper.cpp
+            // anomaly; surface it rather than returning quietly truncated text.
+            guard let cText = whisper_full_get_segment_text(context, i) else {
+                throw WhisperEngineError.inferenceFailed
             }
+            text += String(cString: cText)
         }
 
         return TranscriptionResult(
