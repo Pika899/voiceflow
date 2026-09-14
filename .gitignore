@@ -1,0 +1,12 @@
+.DS_Store
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+Models/*.bin
+Models/*.ggml
+.env
+.env.local
+dist/
+.superpowers/
