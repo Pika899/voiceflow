@@ -20,13 +20,27 @@ Manager plus a packaging script.
 ## Commands
 
 ```bash
-swift build                      # debug build of everything
-swift test                       # run the XCTest suite (VoiceFlowCoreTests)
-swift test --filter <TestClass>   # run one test class
-./scripts/package-app.sh         # release build + assemble dist/VoiceFlow.app + ad-hoc sign
-open dist/VoiceFlow.app          # launch the packaged app
-swift run LatencySpike <model>   # latency spike, needs a path to a ggml .bin model
+swift build                          # debug build of everything
+./scripts/test.sh                    # run the Swift Testing suite — use this, NOT `swift test`
+./scripts/test.sh --filter <Suite>   # run one suite, e.g. --filter SettingsStoreTests
+./scripts/build-whisper.sh           # one-time: vendor + statically build whisper.cpp v1.9.4
+./scripts/package-app.sh             # release build + assemble dist/VoiceFlow.app + ad-hoc sign
+open dist/VoiceFlow.app              # launch the packaged app
+swift run LatencySpike <model>       # latency spike, needs a path to a ggml .bin model
 ```
+
+## Why the test wrapper
+
+Tests use **Swift Testing** (`import Testing`, `@Suite`, `@Test`, `#expect`) — XCTest
+ships only inside Xcode.app and is absent here. This CLT toolchain keeps the Testing
+macro plugin in `usr/lib/swift/host/plugins/testing/`, which the compiler only
+sometimes scans, so plain `swift test` fails intermittently with
+"plugin for module 'TestingMacros' not found". `scripts/test.sh` passes the plugin path
+explicitly (`-Xswiftc -plugin-path`) and is deterministic. If you ever see that error,
+you ran `swift test` directly — use the wrapper.
+
+The first test run after a clean build takes ~15 s: the whisper linkage test
+JIT-compiles Metal shaders once. Subsequent runs are fast.
 
 ## Always test through the packaged app
 

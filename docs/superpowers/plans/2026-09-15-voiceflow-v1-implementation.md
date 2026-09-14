@@ -61,7 +61,7 @@ VOICE APP/                              (repo root)
     package-app.sh                       # Task 10 — builds release binary and assembles dist/VoiceFlow.app
 ```
 
-`VoiceFlowCore` has no UI dependencies (AppKit types like `NSEvent.ModifierFlags` are fine since the whole app is macOS-only), so every file in it is `swift test`-able without Xcode. `VoiceFlowApp` is a plain SPM executable target (per the ruling above, this machine has no Xcode.app) that only wires these pieces to `NSStatusItem`/SwiftUI — it stays thin by design, per "Files that change together should live together." `scripts/package-app.sh` turns the built binary into a real, launchable `VoiceFlow.app`.
+`VoiceFlowCore` has no UI dependencies (AppKit types like `NSEvent.ModifierFlags` are fine since the whole app is macOS-only), so every file in it is `./scripts/test.sh`-able without Xcode. `VoiceFlowApp` is a plain SPM executable target (per the ruling above, this machine has no Xcode.app) that only wires these pieces to `NSStatusItem`/SwiftUI — it stays thin by design, per "Files that change together should live together." `scripts/package-app.sh` turns the built binary into a real, launchable `VoiceFlow.app`.
 
 ---
 
@@ -250,7 +250,7 @@ import CWhisper
 }
 ```
 
-> **Ruling R13:** tests use **Swift Testing** (`import Testing`, `@Test`, `#expect`), not XCTest. XCTest ships only inside Xcode.app and this machine has Command Line Tools only — `xcrun --find xctest` fails and no `XCTest.framework` exists on disk. Swift Testing does ship with the CLT (`/Library/Developer/CommandLineTools/Library/Developer/Frameworks/Testing.framework`) and was verified working here by building and running a throwaway package: `swift test` reported "1 test passed". This keeps the agreed testing strategy intact — automated tests for isolatable logic, manual verification for system integration — with the framework that actually exists in this environment.
+> **Ruling R13:** tests use **Swift Testing** (`import Testing`, `@Test`, `#expect`), not XCTest. XCTest ships only inside Xcode.app and this machine has Command Line Tools only — `xcrun --find xctest` fails and no `XCTest.framework` exists on disk. Swift Testing does ship with the CLT (`/Library/Developer/CommandLineTools/Library/Developer/Frameworks/Testing.framework`) and was verified working here by building and running a throwaway package: `./scripts/test.sh` reported "1 test passed". This keeps the agreed testing strategy intact — automated tests for isolatable logic, manual verification for system integration — with the framework that actually exists in this environment.
 
 - [ ] **Step 8: Ignore the vendored sources**
 
@@ -267,7 +267,7 @@ The vendoring script is committed; the multi-hundred-megabyte checkout and build
 Run: `swift build`
 Expected: resolves HotKey, compiles, links against the vendored static libraries.
 
-Run: `swift test`
+Run: `./scripts/test.sh`
 Expected: 2 tests pass, including `testWhisperLibraryIsLinked`.
 
 Run: `swift run LatencySpike`
@@ -317,7 +317,7 @@ import Testing
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `swift test --filter WhisperEngineTests`
+Run: `./scripts/test.sh --filter WhisperEngineTests`
 Expected: FAIL — `WhisperEngine` does not exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -394,7 +394,7 @@ public final class WhisperEngine {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `swift test --filter WhisperEngineTests`
+Run: `./scripts/test.sh --filter WhisperEngineTests`
 Expected: PASS (3 tests).
 
 - [ ] **Step 5: Manual verification of real inference (not automated)**
@@ -468,7 +468,7 @@ import AVFoundation
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `swift test --filter AudioCaptureTests`
+Run: `./scripts/test.sh --filter AudioCaptureTests`
 Expected: FAIL — `AudioCapture` does not exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -547,7 +547,7 @@ public final class AudioCapture {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `swift test --filter AudioCaptureTests`
+Run: `./scripts/test.sh --filter AudioCaptureTests`
 Expected: PASS (2 tests).
 
 - [ ] **Step 5: Manual verification note**
@@ -808,7 +808,7 @@ import Testing
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `swift test --filter ModelManagerTests`
+Run: `./scripts/test.sh --filter ModelManagerTests`
 Expected: FAIL — `ModelManager` does not exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -934,7 +934,7 @@ public final class ModelManager {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `swift test --filter ModelManagerTests`
+Run: `./scripts/test.sh --filter ModelManagerTests`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Replace the placeholder checksums with real ones**
@@ -1028,7 +1028,7 @@ import Testing
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `swift test --filter SettingsStoreTests`
+Run: `./scripts/test.sh --filter SettingsStoreTests`
 Expected: FAIL — `SettingsStore` does not exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -1082,7 +1082,7 @@ public final class SettingsStore {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `swift test --filter SettingsStoreTests`
+Run: `./scripts/test.sh --filter SettingsStoreTests`
 Expected: PASS (6 tests).
 
 - [ ] **Step 5: Commit**

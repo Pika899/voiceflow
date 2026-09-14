@@ -63,8 +63,8 @@ Package Manager. L'app viene assemblata in un vero `.app` da uno script.
 
 ```bash
 swift build                      # build di tutto
-swift test                       # esegue la suite di test
-swift test --filter SettingsStoreTests   # un singolo gruppo di test
+./scripts/test.sh                # esegue la suite di test (usare questo, non `swift test`)
+./scripts/test.sh --filter SettingsStoreTests   # un singolo gruppo di test
 ./scripts/build-whisper.sh       # vendorizza e compila whisper.cpp (una tantum)
 ./scripts/package-app.sh         # release + assembla dist/VoiceFlow.app
 open dist/VoiceFlow.app          # lancia l'app impacchettata
@@ -74,6 +74,14 @@ swift run LatencySpike <modello> # spike di latenza, richiede un .bin ggml
 **Test runner: Swift Testing** (`import Testing`, `@Test`, `#expect`), non
 XCTest. XCTest è distribuito solo dentro Xcode.app e qui non esiste;
 `Testing.framework` invece arriva con i Command Line Tools e funziona.
+
+**Lanciare i test sempre con `./scripts/test.sh`, mai con `swift test`
+diretto**: questo toolchain CLT tiene il plugin delle macro di Testing in
+una sottocartella che il compilatore scansiona solo a volte, e `swift test`
+liscio fallisce a intermittenza con "plugin for module 'TestingMacros' not
+found". Il wrapper passa il percorso del plugin esplicitamente e rende ogni
+esecuzione deterministica. Verificato: stesso comando liscio fallito e poi
+passato di seguito; con il wrapper passa sempre.
 
 Vale la divisione decisa all'inizio: test automatici per la logica isolabile
 (settings, checksum, resampling, post-processing del testo), verifica
