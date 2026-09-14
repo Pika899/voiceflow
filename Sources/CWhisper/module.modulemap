@@ -1,0 +1,4 @@
+module CWhisper {
+    header "../../Vendor/whisper/include/whisper.h"
+    export *
+}
