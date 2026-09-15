@@ -2008,9 +2008,21 @@ extension StatusBarController {
             alert.addButton(withTitle: "OK")
             alert.runModal()
 
+        case "model-load-failed":
+            // Checksum passed but whisper refused the file: offer the same
+            // re-download path as a missing model rather than a bare error.
+            alert.messageText = "Model couldn't be loaded"
+            alert.informativeText = "The speech model is present but failed to load. Download it again?"
+            alert.addButton(withTitle: "Download")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                startModelDownload()
+            }
+
         case "hotkey-conflict":
             alert.messageText = "Hotkey already in use"
-            alert.informativeText = "Control+Option+Space is already registered by another app. Choose a different one in Settings."
+            // v1 has no rebind UI, so the only honest advice is to free the shortcut.
+            alert.informativeText = "Control+Option+Space is already registered by another app. Quit that app or free the shortcut there, then relaunch VoiceFlow."
             alert.addButton(withTitle: "OK")
             alert.runModal()
 
@@ -2031,14 +2043,26 @@ extension StatusBarController {
 In `StatusBarController`'s `state` `didSet` (Task 10), add:
 
 ```swift
+// `NSAlert.runModal()` pumps the run loop, so a hotkey press can arrive while
+// an alert is up and drive the state machine back into `.error` — without
+// this flag that would stack a second alert on top of the first.
+private var isPresentingAlert = false
+
 private var state: DictationState = .idle {
     didSet {
         updateIcon()
-        if case .error(let code) = state {
+        if case .error(let code) = state, !isPresentingAlert {
             presentAlert(for: code)
         }
     }
 }
+```
+
+And make `presentAlert(for:)` own the flag — first two lines of its body:
+
+```swift
+isPresentingAlert = true
+defer { isPresentingAlert = false }
 ```
 
 - [ ] **Step 3: Implement proactive permission checks on launch (not just on failure)**
@@ -2058,10 +2082,19 @@ This satisfies the spec's requirement to detect missing Accessibility proactivel
 Add `startModelDownload()`:
 
 ```swift
+// Identifies the download whose completion is still welcome. Cancel or a
+// newer download replaces it, so a stale completion can neither dismiss an
+// unrelated alert nor overwrite whatever state the user has moved on to.
+private var activeDownloadID = UUID()
+
 private func startModelDownload() {
     let model = ModelManager.knownModels.first { $0.name == settingsStore.model.rawValue }!
+    let downloadID = UUID()
+    activeDownloadID = downloadID
+
     let progressAlert = NSAlert()
     progressAlert.messageText = "Downloading \(model.name) model..."
+    progressAlert.addButton(withTitle: "Cancel")
     let progressBar = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 250, height: 20))
     progressBar.style = .bar
     progressBar.minValue = 0
@@ -2072,18 +2105,36 @@ private func startModelDownload() {
         DispatchQueue.main.async { progressBar.doubleValue = fraction }
     }, completion: { [weak self] result in
         DispatchQueue.main.async {
+            guard let self, self.activeDownloadID == downloadID else { return }
+            // Only dismiss our own progress alert — never whatever else may
+            // be modal by the time a long download finishes.
+            if NSApp.modalWindow == progressAlert.window {
+                NSApp.stopModal()
+            }
             switch result {
             case .success:
-                self?.loadModelIfPresent()
-                self?.state = .idle
+                self.loadModelIfPresent()
+                if self.whisperEngine != nil {
+                    self.state = .idle
+                }
             case .failure(let error):
-                self?.state = .error("model-download-failed: \(error)")
+                self.state = .error("model-download-failed: \(error)")
             }
         }
     })
-    progressAlert.runModal()
+
+    let response = progressAlert.runModal()
+    if response == .alertFirstButtonReturn {
+        // Cancel: the URLSession task keeps running in the background (v1
+        // limitation — ModelManager exposes no cancel), but its completion
+        // is now ignored. State is still `.error("model-missing")` from the
+        // alert that led here; don't reassign it, or it would re-prompt.
+        activeDownloadID = UUID()
+    }
 }
 ```
+
+> `runModal()` returns `.stop` when our completion dismisses the alert and `.alertFirstButtonReturn` when the user clicks Cancel — the two are distinguishable, which is what makes the cancel branch safe.
 
 - [ ] **Step 5: Implement hotkey conflict detection**
 
