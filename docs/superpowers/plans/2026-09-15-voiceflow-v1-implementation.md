@@ -444,10 +444,11 @@ import AVFoundation
 @testable import VoiceFlowCore
 
 @Suite struct AudioCaptureTests {
-    @Test func resampleDownsamples44100To16000() throws {
-        let inputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100, channels: 1, interleaved: false)!
-        let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+    private let inputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100, channels: 1, interleaved: false)!
+    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
 
+    @Test func resampleDownsamples44100To16000() throws {
+        let converter = try #require(AVAudioConverter(from: inputFormat, to: targetFormat))
         let frameCount: AVAudioFrameCount = 44100 // 1 second of audio
         let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: frameCount)!
         buffer.frameLength = frameCount
@@ -455,22 +456,47 @@ import AVFoundation
             buffer.floatChannelData![0][i] = sin(Float(i) * 0.01)
         }
 
-        let output = AudioCapture.resample(buffer: buffer, from: inputFormat, to: targetFormat)
+        let output = AudioCapture.resample(buffer: buffer, using: converter, to: targetFormat)
 
-        // ~1 second of audio at 16kHz should be close to 16000 samples.
-        #expect(output.count > 15000)
-        #expect(output.count < 17000)
+        // One second at 16 kHz is 16000 frames. A single-shot conversion loses
+        // a few dozen frames to the converter's filter priming (observed: 15994
+        // on this machine), so allow that — but nothing that would indicate
+        // dropped audio.
+        #expect(output.count >= 15900)
+        #expect(output.count <= 16000)
     }
 
     @Test func resampleOfEmptyBufferIsEmpty() throws {
-        let inputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100, channels: 1, interleaved: false)!
-        let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+        let converter = try #require(AVAudioConverter(from: inputFormat, to: targetFormat))
         let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: 0)!
         buffer.frameLength = 0
 
-        let output = AudioCapture.resample(buffer: buffer, from: inputFormat, to: targetFormat)
+        let output = AudioCapture.resample(buffer: buffer, using: converter, to: targetFormat)
 
         #expect(output.count == 0)
+    }
+
+    @Test func resampleAcrossConsecutiveBuffersPreservesTotalLength() throws {
+        // Capture feeds the same converter ~1024-frame buffers back to back.
+        // Reusing one converter across buffers must not lose frames at each
+        // boundary the way a fresh converter per buffer would.
+        let converter = try #require(AVAudioConverter(from: inputFormat, to: targetFormat))
+        let chunk: AVAudioFrameCount = 1024
+        let chunks = 43 // 43 * 1024 = 44032 frames ≈ 0.9985 s
+        var total = 0
+        for c in 0..<chunks {
+            let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: chunk)!
+            buffer.frameLength = chunk
+            for i in 0..<Int(chunk) {
+                buffer.floatChannelData![0][i] = sin(Float(c * Int(chunk) + i) * 0.01)
+            }
+            total += AudioCapture.resample(buffer: buffer, using: converter, to: targetFormat).count
+        }
+
+        // 44032 / 44100 * 16000 ≈ 15975 frames if nothing is lost across
+        // boundaries; same priming allowance as the single-buffer test.
+        #expect(total >= 15875)
+        #expect(total <= 15975)
     }
 }
 ```
@@ -487,11 +513,22 @@ Expected: FAIL — `AudioCapture` does not exist yet.
 ```swift
 import AVFoundation
 
+public enum AudioCaptureError: Error {
+    /// The input node reports no usable device (0 channels or 0 Hz).
+    case noInputDevice
+    /// AVAudioConverter refused the device's format → 16 kHz mono.
+    case unsupportedInputFormat
+}
+
 public final class AudioCapture {
     public private(set) var isCapturing = false
 
     private let engine = AVAudioEngine()
+    // `samples` is appended on the audio render thread (inside the tap) and
+    // read/cleared on the caller's thread; every access goes through `lock`.
+    private let lock = NSLock()
     private var samples: [Float] = []
+    private var converter: AVAudioConverter?
     private let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
         sampleRate: 16000,
@@ -503,36 +540,64 @@ public final class AudioCapture {
 
     public func start() throws {
         guard !isCapturing else { return }
-        samples.removeAll()
 
         let inputNode = engine.inputNode
         let inputFormat = inputNode.inputFormat(forBus: 0)
+        // installTap on a 0-channel/0 Hz format raises an Objective-C
+        // exception that Swift `try` cannot catch — fail loudly here instead.
+        guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+            throw AudioCaptureError.noInputDevice
+        }
+        // One converter for the whole capture: building one per tap callback
+        // would re-prime its filter on every buffer and drop samples at each
+        // boundary, and would make a construction failure invisible.
+        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+            throw AudioCaptureError.unsupportedInputFormat
+        }
+        self.converter = converter
+
+        lock.lock()
+        samples.removeAll()
+        lock.unlock()
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self else { return }
-            let converted = Self.resample(buffer: buffer, from: inputFormat, to: self.targetFormat)
+            let converted = Self.resample(buffer: buffer, using: converter, to: self.targetFormat)
+            self.lock.lock()
             self.samples.append(contentsOf: converted)
+            self.lock.unlock()
         }
 
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            inputNode.removeTap(onBus: 0)
+            self.converter = nil
+            throw error
+        }
         isCapturing = true
     }
 
     public func stop() -> [Float] {
-        guard isCapturing else { return samples }
+        guard isCapturing else { return [] }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         isCapturing = false
+        converter = nil
+
+        lock.lock()
+        defer { lock.unlock() }
         return samples
     }
 
-    static func resample(buffer: AVAudioPCMBuffer, from inputFormat: AVAudioFormat, to targetFormat: AVAudioFormat) -> [Float] {
+    static func resample(buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, to targetFormat: AVAudioFormat) -> [Float] {
         guard buffer.frameLength > 0 else { return [] }
-        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else { return [] }
 
-        let ratio = targetFormat.sampleRate / inputFormat.sampleRate
-        let outputCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
+        let ratio = targetFormat.sampleRate / converter.inputFormat.sampleRate
+        // Slack covers the converter's internal filter delay, which can emit a
+        // few frames beyond the pure ratio on a given call.
+        let outputCapacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 64
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputCapacity) else { return [] }
 
         var error: NSError?
@@ -553,6 +618,8 @@ public final class AudioCapture {
     }
 }
 ```
+
+> **Ruling R15 (from Task 3 review):** the original version built a fresh `AVAudioConverter` inside every tap callback, returned `[]` silently if that failed, had no guard for a device-less input format (whose `installTap` raises an uncatchable ObjC exception), and mutated `samples` from two threads with no synchronization. All four are fixed above: the converter is built once in `start()` and its failure throws; a 0-channel/0 Hz format throws; `samples` is guarded by `NSLock`. A brief uncontended lock on the render thread is acceptable for push-to-talk dictation at 1024-frame buffers — a lock-free ring buffer would be the purist answer and is out of scope for v1.
 
 - [ ] **Step 4: Run test to verify it passes**
 
