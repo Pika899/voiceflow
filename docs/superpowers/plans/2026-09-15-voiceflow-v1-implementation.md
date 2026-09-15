@@ -1409,6 +1409,9 @@ import CoreGraphics
 
 public enum TextInjectionError: Error {
     case accessibilityNotTrusted
+    /// Neither the Accessibility write nor synthetic keystrokes could deliver
+    /// the text — the caller must surface this, never assume it was typed.
+    case injectionFailed
 }
 
 public final class TextInjector {
@@ -1421,7 +1424,9 @@ public final class TextInjector {
         if insertViaAccessibility(text) {
             return
         }
-        insertViaSyntheticKeystrokes(text)
+        guard insertViaSyntheticKeystrokes(text) else {
+            throw TextInjectionError.injectionFailed
+        }
     }
 
     /// Tries to write directly into the focused element's selected-text
@@ -1436,7 +1441,14 @@ public final class TextInjector {
             kAXFocusedUIElementAttribute as CFString,
             &focusedElementRef
         )
-        guard copyResult == .success, let focusedElementRef else { return false }
+        // A third-party AX implementation can hand back the wrong CF type
+        // alongside .success; checking the type ID keeps a forced cast from
+        // taking down the whole app on every dictation.
+        guard copyResult == .success,
+              let focusedElementRef,
+              CFGetTypeID(focusedElementRef) == AXUIElementGetTypeID() else {
+            return false
+        }
         let focusedElement = focusedElementRef as! AXUIElement
 
         let setResult = AXUIElementSetAttributeValue(
@@ -1449,19 +1461,26 @@ public final class TextInjector {
 
     /// Fallback: synthesizes keyboard events carrying the Unicode text
     /// directly, bypassing the need for the target app to expose a
-    /// settable accessibility attribute.
-    private func insertViaSyntheticKeystrokes(_ text: String) {
-        let source = CGEventSource(stateID: .hidSystemState)
+    /// settable accessibility attribute. Returns `false` if any event could
+    /// not be created, so a dropped character is never silent.
+    ///
+    /// `virtualKey: 0` is kVK_ANSI_A; the Unicode payload is what Cocoa apps
+    /// read. An app that inspects the key code instead of the characters
+    /// would see "a" — a known limitation of this technique, acceptable for v1.
+    private func insertViaSyntheticKeystrokes(_ text: String) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState) else { return false }
         for scalar in text.unicodeScalars {
             let utf16 = Array(String(scalar).utf16)
-            guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) else { continue }
+            guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
+                return false
+            }
             keyDown.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
-            keyDown.post(tap: .cghidEventTap)
-
-            guard let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { continue }
             keyUp.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+            keyDown.post(tap: .cghidEventTap)
             keyUp.post(tap: .cghidEventTap)
         }
+        return true
     }
 }
 ```
@@ -1695,8 +1714,10 @@ final class StatusBarController {
                     do {
                         try self.textInjector.inject(result.text)
                         self.state = .idle
-                    } catch {
+                    } catch TextInjectionError.accessibilityNotTrusted {
                         self.state = .error("accessibility-permission")
+                    } catch {
+                        self.state = .error("injection-failed")
                     }
                 }
             } catch {
@@ -1958,6 +1979,12 @@ extension StatusBarController {
             alert.addButton(withTitle: "OK")
             alert.runModal()
 
+        case "injection-failed":
+            alert.messageText = "Couldn't type the text"
+            alert.informativeText = "The transcription succeeded, but VoiceFlow couldn't insert it into the active app. Click into a text field and try again."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+
         case "hotkey-conflict":
             alert.messageText = "Hotkey already in use"
             alert.informativeText = "Control+Option+Space is already registered by another app. Choose a different one in Settings."
@@ -2080,8 +2107,10 @@ DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 try self.textInjector.inject(result.text)
                 self.state = .idle
-            } catch {
+            } catch TextInjectionError.accessibilityNotTrusted {
                 self.state = .error("accessibility-permission")
+            } catch {
+                self.state = .error("injection-failed")
             }
         }
     } catch {
