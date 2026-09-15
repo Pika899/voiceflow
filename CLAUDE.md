@@ -73,7 +73,8 @@ swift build                      # build di tutto
 ./scripts/test.sh                # esegue la suite di test (usare questo, non `swift test`)
 ./scripts/test.sh --filter SettingsStoreTests   # un singolo gruppo di test
 ./scripts/build-whisper.sh       # vendorizza e compila whisper.cpp (una tantum)
-./scripts/package-app.sh         # release + assembla dist/VoiceFlow.app
+./scripts/make-signing-cert.sh   # una tantum: certificato locale "VoiceFlow Dev" per firma stabile
+./scripts/package-app.sh         # release + assembla dist/VoiceFlow.app (firma con VoiceFlow Dev se esiste)
 open dist/VoiceFlow.app          # lancia l'app impacchettata
 swift run LatencySpike <modello> # spike di latenza, richiede un .bin ggml
 ```
@@ -94,6 +95,16 @@ Vale la divisione decisa all'inizio: test automatici per la logica isolabile
 (settings, checksum, resampling, post-processing del testo), verifica
 manuale per ciò che tocca sistema e hardware (hotkey globale, microfono,
 permessi, iniezione testo).
+
+**Firma stabile o i permessi si perdono.** Una firma ad-hoc identifica l'app
+dal `cdhash` dei suoi byte: a ogni rebuild macOS la vede come un'app nuova e
+i permessi Accessibilità/Microfono già concessi smettono di valere (il toggle
+resta acceso, ma `AXIsProcessTrusted()` è falso). `scripts/make-signing-cert.sh`
+crea una volta il certificato locale "VoiceFlow Dev"; `package-app.sh` lo usa
+se esiste, e l'identità resta `identifier "com.voiceflow.app" and certificate
+leaf = …` tra un rebuild e l'altro. Al primo uso macOS chiede "Consenti
+sempre" per la chiave. Se dopo un rebuild ad-hoc i permessi sembrano
+ignorati: rimuovi e ri-aggiungi l'app nella lista Accessibilità.
 
 **Non testare l'app con `swift run VoiceFlowApp`**: `LSUIElement` e
 `NSMicrophoneUsageDescription` stanno nell'`Info.plist`, che ha effetto solo

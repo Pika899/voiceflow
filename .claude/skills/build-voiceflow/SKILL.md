@@ -24,7 +24,8 @@ swift build                          # debug build of everything
 ./scripts/test.sh                    # run the Swift Testing suite — use this, NOT `swift test`
 ./scripts/test.sh --filter <Suite>   # run one suite, e.g. --filter SettingsStoreTests
 ./scripts/build-whisper.sh           # one-time: vendor + statically build whisper.cpp v1.9.4
-./scripts/package-app.sh             # release build + assemble dist/VoiceFlow.app + ad-hoc sign
+./scripts/make-signing-cert.sh       # one-time: local "VoiceFlow Dev" cert for a stable signing identity
+./scripts/package-app.sh             # release build + assemble dist/VoiceFlow.app (signs with VoiceFlow Dev if present)
 open dist/VoiceFlow.app              # launch the packaged app
 swift run LatencySpike <model>       # latency spike, needs a path to a ggml .bin model
 ```
@@ -59,9 +60,13 @@ never with `swift run VoiceFlowApp`.
 - **Accessibility** — System Settings → Privacy & Security → Accessibility (required
   to type text into other apps)
 
-After a rebuild the app keeps its TCC grants as long as the ad-hoc signature identity
-stays stable. If macOS stops recognizing the app, remove it from both privacy lists
-and re-grant.
+TCC grants are keyed to the app's code-signing identity. An ad-hoc signature's
+identity is the cdhash of the exact binary, so it changes on EVERY rebuild and the
+grants silently stop applying (the toggle still shows ON). Run
+`scripts/make-signing-cert.sh` once: `package-app.sh` then signs with the local
+"VoiceFlow Dev" certificate and the identity stays stable across rebuilds. The first
+signing pops a keychain dialog — click "Always Allow". If grants ever seem ignored
+after an ad-hoc build, remove the app from the Accessibility list and add it back.
 
 ## Model files
 
