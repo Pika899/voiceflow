@@ -624,7 +624,7 @@ public final class AudioCapture {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `./scripts/test.sh --filter AudioCaptureTests`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests).
 
 - [ ] **Step 5: Manual verification note**
 
@@ -641,77 +641,218 @@ git commit -m "feat: add AudioCapture with 16kHz mono resampling"
 
 ## Task 4: HotkeyManager — global push-to-talk hotkey
 
+> **Ruling R16:** the plan originally wrapped the `soffes/HotKey` package and relied on a `HotKey.isRegistered` property for conflict detection. Inspection of the resolved v0.2.1 source shows no such property exists, and `HotKeysController.register` swallows a failed `RegisterEventHotKey` with a bare `return` — the library structurally cannot report "hotkey already in use", which the spec requires detecting at registration ("Hotkey già in uso da un'altra app: rilevarlo alla registrazione… invece di fallire silenziosamente"). So `HotkeyManager` calls Carbon's `RegisterEventHotKey` directly (the spec's first-listed option) and surfaces its `OSStatus`. The `HotKey` package dependency is removed. Side benefit: Carbon refuses a combination that is already registered — by any process, including this one — with `eventHotKeyExistsErr`, so the conflict path is unit-testable without a human.
+
 **Files:**
 - Create: `Sources/VoiceFlowCore/HotkeyManager.swift`
+- Test: `Tests/VoiceFlowCoreTests/HotkeyManagerTests.swift`
+- Modify: `Package.swift` (drop the `HotKey` dependency and product)
 
 **Interfaces:**
-- Consumes: `HotKey` product (soffes/HotKey, added in Task 1).
-- Produces: `HotkeyManager()`, `func register(key: Key, modifiers: NSEvent.ModifierFlags) -> Bool`, `func unregister()`, `onPress: (() -> Void)?`, `onRelease: (() -> Void)?`. Task 5 and Task 10 use `onPress`/`onRelease` to drive `AudioCapture.start()`/`stop()`.
+- Consumes: Carbon (`RegisterEventHotKey`, `InstallEventHandler`) — system framework, no package.
+- Produces: `HotkeyManager()`, `func register(keyCode: UInt32, modifiers: UInt32) -> Bool` (defaults: `kVK_Space`, `controlKey | optionKey` → Control+Option+Space), `func unregister()`, `onPress: (() -> Void)?`, `onRelease: (() -> Void)?`. Task 5, 10 and 12 call `register()` with the defaults and branch on its `Bool`.
 
-No automated test: a global hotkey only fires from real OS-level key events, which don't exist in a test runner. This task is verified manually, and its correctness is folded into Task 5's spike run (if the hotkey didn't work, the spike wouldn't produce any audio to transcribe).
+- [ ] **Step 1: Write the failing tests**
 
-- [ ] **Step 1: Write the implementation**
+`Tests/VoiceFlowCoreTests/HotkeyManagerTests.swift`:
+
+```swift
+import Testing
+@testable import VoiceFlowCore
+
+// .serialized: every test registers the same global combination, so they
+// must not overlap.
+@Suite(.serialized) struct HotkeyManagerTests {
+    @Test func registersAndUnregisters() {
+        let manager = HotkeyManager()
+        #expect(manager.register())
+        manager.unregister()
+    }
+
+    @Test func secondRegistrationOfSameComboIsRefused() {
+        let first = HotkeyManager()
+        let second = HotkeyManager()
+        defer {
+            first.unregister()
+            second.unregister()
+        }
+        #expect(first.register())
+        // Carbon refuses a combination that is already registered — by any
+        // process, including this one — with eventHotKeyExistsErr. This is
+        // exactly the "hotkey already in use" case the spec requires detecting.
+        #expect(!second.register())
+    }
+
+    @Test func comboBecomesAvailableAgainAfterUnregister() {
+        let first = HotkeyManager()
+        let second = HotkeyManager()
+        defer { second.unregister() }
+        #expect(first.register())
+        first.unregister()
+        #expect(second.register())
+    }
+
+    @Test func registeringTwiceOnSameManagerIsIdempotent() {
+        let manager = HotkeyManager()
+        defer { manager.unregister() }
+        #expect(manager.register())
+        #expect(manager.register())
+    }
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `./scripts/test.sh --filter HotkeyManagerTests`
+Expected: FAIL — `HotkeyManager` does not exist yet.
+
+- [ ] **Step 3: Remove the HotKey dependency from `Package.swift`**
+
+Delete the `.package(url: "https://github.com/soffes/HotKey", from: "0.2.1")` entry from `dependencies` (leaving the array empty: `dependencies: [],`) and delete `.product(name: "HotKey", package: "HotKey")` from `VoiceFlowCore`'s `dependencies`, leaving only `"CWhisper"`. Carbon needs no package — it is a system framework reachable via `import Carbon`.
+
+- [ ] **Step 4: Write the implementation**
 
 `Sources/VoiceFlowCore/HotkeyManager.swift`:
 
 ```swift
-import AppKit
-import HotKey
+import Carbon
+import Foundation
 
 public final class HotkeyManager {
     public var onPress: (() -> Void)?
     public var onRelease: (() -> Void)?
 
-    private var hotKey: HotKey?
+    private var hotKeyRef: EventHotKeyRef?
+    private var eventHandlerRef: EventHandlerRef?
+    private let hotKeyID: EventHotKeyID
 
-    public init() {}
+    private static let signature: OSType = 0x56464C57 // 'VFLW'
+    private static var nextID: UInt32 = 1
 
-    /// Registers the global hotkey. Returns `false` if registration failed
-    /// (e.g. another app already owns this combination) — the caller is
-    /// responsible for surfacing that to the user (see Task 12).
+    public init() {
+        hotKeyID = EventHotKeyID(signature: Self.signature, id: Self.nextID)
+        Self.nextID += 1
+    }
+
+    deinit {
+        unregister()
+    }
+
+    /// Registers the global hotkey. Returns `false` if the system refused the
+    /// registration — in practice `eventHotKeyExistsErr`, meaning another
+    /// registration (any process, including this one) already owns the
+    /// combination. The caller surfaces that to the user (Task 12).
     @discardableResult
-    public func register(key: Key = .space, modifiers: NSEvent.ModifierFlags = [.control, .option]) -> Bool {
-        let newHotKey = HotKey(key: key, modifiers: modifiers)
-        newHotKey.keyDownHandler = { [weak self] in self?.onPress?() }
-        newHotKey.keyUpHandler = { [weak self] in self?.onRelease?() }
-        self.hotKey = newHotKey
-        return newHotKey.isRegistered
+    public func register(
+        keyCode: UInt32 = UInt32(kVK_Space),
+        modifiers: UInt32 = UInt32(controlKey | optionKey)
+    ) -> Bool {
+        guard hotKeyRef == nil else { return true }
+        installEventHandlerIfNeeded()
+
+        var ref: EventHotKeyRef?
+        let status = RegisterEventHotKey(
+            keyCode,
+            modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &ref
+        )
+        guard status == noErr, let ref else { return false }
+        hotKeyRef = ref
+        return true
     }
 
     public func unregister() {
-        hotKey = nil
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            self.hotKeyRef = nil
+        }
+        if let eventHandlerRef {
+            RemoveEventHandler(eventHandlerRef)
+            self.eventHandlerRef = nil
+        }
     }
+
+    private func installEventHandlerIfNeeded() {
+        guard eventHandlerRef == nil else { return }
+        var eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+        ]
+        let selfPointer = Unmanaged.passUnretained(self).toOpaque()
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            hotkeyEventHandler,
+            eventTypes.count,
+            &eventTypes,
+            selfPointer,
+            &eventHandlerRef
+        )
+    }
+
+    fileprivate func handle(event: EventRef?) -> OSStatus {
+        var incomingID = EventHotKeyID()
+        let status = GetEventParameter(
+            event,
+            EventParamName(kEventParamDirectObject),
+            EventParamType(typeEventHotKeyID),
+            nil,
+            MemoryLayout<EventHotKeyID>.size,
+            nil,
+            &incomingID
+        )
+        guard status == noErr,
+              incomingID.signature == hotKeyID.signature,
+              incomingID.id == hotKeyID.id else {
+            return OSStatus(eventNotHandledErr)
+        }
+
+        switch GetEventKind(event) {
+        case UInt32(kEventHotKeyPressed):
+            onPress?()
+        case UInt32(kEventHotKeyReleased):
+            onRelease?()
+        default:
+            return OSStatus(eventNotHandledErr)
+        }
+        return noErr
+    }
+}
+
+// Carbon needs a C-convention function pointer; it hands back the manager
+// through the userData pointer registered in installEventHandlerIfNeeded.
+private func hotkeyEventHandler(
+    _ callRef: EventHandlerCallRef?,
+    _ event: EventRef?,
+    _ userData: UnsafeMutableRawPointer?
+) -> OSStatus {
+    guard let userData else { return OSStatus(eventNotHandledErr) }
+    let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+    return manager.handle(event: event)
 }
 ```
 
-> Verify `HotKey.isRegistered` still exists on whatever HotKey version `swift build` resolves in Task 1 — check `.build/checkouts/HotKey/Sources/HotKey/HotKey.swift`. If the API differs, adapt the return value accordingly; the default hotkey stays `Control+Option+Space` either way, matching the spec.
+> If the Swift 6.4 toolchain warns about `static var nextID` being shared mutable state (the package is in language mode 5.9, so it is at most a warning), mark it `nonisolated(unsafe) static var nextID` — managers are only ever created on the main thread.
 
-- [ ] **Step 2: Build to confirm it compiles**
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `./scripts/test.sh --filter HotkeyManagerTests`
+Expected: PASS (4 tests). If `secondRegistrationOfSameComboIsRefused` fails because Carbon *allowed* the duplicate, do not weaken the assertion — report the observed behavior; it changes how Task 12's conflict detection must work.
 
 Run: `swift build`
-Expected: succeeds.
+Expected: succeeds with no reference to HotKey anywhere (`grep -rn "import HotKey" Sources` is empty).
 
-- [ ] **Step 3: Manual verification**
+- [ ] **Step 6: Manual verification (human only — not performed by the implementer)**
 
-Add a temporary block to `LatencySpike/main.swift`:
+Actual press/release delivery needs a person at the keyboard; it is exercised by Task 5's spike. The one thing to keep in mind for that spike: a command-line process only receives Carbon hot key events while its main run loop is running (`RunLoop.main.run()`), which the spike does.
 
-```swift
-let hotkey = HotkeyManager()
-let registered = hotkey.register()
-print("Hotkey registered: \(registered)")
-hotkey.onPress = { print("PRESS") }
-hotkey.onRelease = { print("RELEASE") }
-RunLoop.main.run()
-```
-
-Run: `swift run LatencySpike`, then press and release Control+Option+Space.
-Expected: console prints `Hotkey registered: true`, then `PRESS` and `RELEASE` on each press/release. Ctrl+C to stop. Remove this temporary block before Task 5 (which replaces it with the real spike).
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add Sources/VoiceFlowCore/HotkeyManager.swift
-git commit -m "feat: add HotkeyManager wrapping the HotKey package"
+git add Package.swift Package.resolved Sources/VoiceFlowCore/HotkeyManager.swift Tests/VoiceFlowCoreTests/HotkeyManagerTests.swift
+git commit -m "feat: add HotkeyManager on Carbon with conflict detection"
 ```
 
 ---
