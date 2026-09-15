@@ -12,6 +12,7 @@ enum DictationState {
 final class StatusBarController: NSObject {
     private let statusItem: NSStatusItem
     private let hotkeyManager = HotkeyManager()
+    private let fnKeyMonitor = FnKeyMonitor()
     private let audioCapture = AudioCapture()
     private let permissionsManager = PermissionsManager()
     private let textInjector = TextInjector()
@@ -21,9 +22,12 @@ final class StatusBarController: NSObject {
 
     private lazy var popover: NSPopover = {
         let popover = NSPopover()
-        popover.contentSize = NSSize(width: 260, height: 260)
+        popover.contentSize = NSSize(width: 260, height: 310)
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: SettingsPopoverView(viewModel: SettingsViewModel(store: settingsStore)))
+        let viewModel = SettingsViewModel(store: settingsStore) { [weak self] in
+            self?.configurePushToTalk()
+        }
+        popover.contentViewController = NSHostingController(rootView: SettingsPopoverView(viewModel: viewModel))
         return popover
     }()
 
@@ -54,11 +58,14 @@ final class StatusBarController: NSObject {
         statusItem.button?.target = self
         requestMicrophoneAccessIfNeeded()
         loadModelIfPresent()
-        registerHotkey()
+        configurePushToTalk()
 
         // Proactive check: detect missing Accessibility access at launch
         // rather than waiting for the first injection to fail silently.
-        if permissionsManager.accessibilityStatus() != .granted {
+        // (The fn-key backend may already have reported it just above —
+        // don't raise the same alert twice.)
+        if permissionsManager.accessibilityStatus() != .granted,
+           !isReportingAccessibilityError {
             state = .error("accessibility-permission")
         }
     }
@@ -103,11 +110,42 @@ final class StatusBarController: NSObject {
         }
     }
 
-    private func registerHotkey() {
-        hotkeyManager.onPress = { [weak self] in self?.beginDictation() }
-        hotkeyManager.onRelease = { [weak self] in self?.finishDictation() }
-        if !hotkeyManager.register() {
-            state = .error("hotkey-conflict")
+    /// Binds push-to-talk to whichever key the user chose. Safe to call again
+    /// after the choice changes or after Accessibility is granted: both
+    /// backends are torn down first.
+    private var isReportingAccessibilityError: Bool {
+        if case .error(let code) = state, code == "accessibility-permission" {
+            return true
+        }
+        return false
+    }
+
+    private func configurePushToTalk() {
+        // fn is a modifier, so the user can hold it and still reach the
+        // popover with the mouse: close an in-flight dictation before the
+        // backend that would have delivered its release goes away.
+        if case .listening = state {
+            finishDictation()
+        }
+        hotkeyManager.unregister()
+        fnKeyMonitor.stop()
+
+        switch settingsStore.pushToTalkKey {
+        case .fnKey:
+            fnKeyMonitor.onPress = { [weak self] in self?.beginDictation() }
+            fnKeyMonitor.onRelease = { [weak self] in self?.finishDictation() }
+            if !fnKeyMonitor.start() {
+                // Same Accessibility permission as text injection. Report it
+                // here too: this runs again from the popover and after the
+                // alert, where no other check would surface a dead key.
+                state = .error("accessibility-permission")
+            }
+        case .controlOptionSpace:
+            hotkeyManager.onPress = { [weak self] in self?.beginDictation() }
+            hotkeyManager.onRelease = { [weak self] in self?.finishDictation() }
+            if !hotkeyManager.register() {
+                state = .error("hotkey-conflict")
+            }
         }
     }
 
@@ -289,6 +327,11 @@ extension StatusBarController {
             alert.addButton(withTitle: "Cancel")
             if alert.runModal() == .alertFirstButtonReturn {
                 permissionsManager.promptAccessibilityAccess()
+            }
+            // If the grant just happened, the fn monitor could not start at
+            // launch; rebinding now picks it up without a relaunch.
+            if settingsStore.pushToTalkKey == .fnKey {
+                configurePushToTalk()
             }
 
         case "model-missing":

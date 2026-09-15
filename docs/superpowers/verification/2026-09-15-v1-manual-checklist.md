@@ -30,7 +30,7 @@ Il modello `base` è già scaricato e verificato in
 Lo spike stampa i tempi reali in console. Ripeti 2-3 volte per modello.
 
 ```bash
-swift run LatencySpike /tmp/ggml-base.bin     # tieni premuto Ctrl+Opt+Spazio, parla 5-10 s, rilascia
+swift run LatencySpike /tmp/ggml-base.bin     # lo spike usa sempre Ctrl+Opt+Spazio: tienilo premuto, parla 5-10 s, rilascia
 swift run LatencySpike /tmp/ggml-small.bin
 ```
 
@@ -47,7 +47,11 @@ cambiare il default: `Sources/VoiceFlowCore/SettingsStore.swift`, `?? .base`.
 
 ## B. Dettatura end-to-end (Task 10 / Task 13)
 
-- [ ] TextEdit: clic in un documento, tieni premuto Ctrl+Opt+Spazio, parla, rilascia → il testo compare al cursore
+- [ ] Impostazioni di Sistema → Tastiera → "Premi il tasto 🌐 per" → **Nessuna azione** (altrimenti ogni pressione apre anche il picker emoji)
+- [ ] TextEdit: clic in un documento, tieni premuto **fn** (default), parla, rilascia → il testo compare al cursore
+- [ ] Nel popover, "Push-to-talk key" → Control+Option+Space: funziona senza rilanciare; torna a fn: funziona
+- [ ] Caso limite: tieni premuto fn, apri il popover col mouse e cambia opzione → la dettatura in corso si chiude (icona torna a riposo), non resta in ascolto
+- [ ] Verifica permesso: con Accessibilità concessa e **Monitoraggio input** NON concesso, fn funziona? (Se no, il monitor richiede Input Monitoring e il controllo va cambiato — segnalalo.)
 - [ ] L'icona nella barra dei menu passa: microfono → microfono pieno (ascolto) → onda (trascrizione) → microfono
 - [ ] Una seconda app (Note, o un editor): stesso risultato
 - [ ] Nessuna icona nel Dock (`LSUIElement`)
@@ -76,7 +80,7 @@ una garanzia — misura i tuoi.
 - [ ] Clic sull'icona → si apre il popover con Modello, Lingua, Avvio al login
 - [ ] Cambia modello a `small`, esci e rilancia → la scelta è rimasta
 - [ ] Cambia lingua a English → una dettatura in inglese viene trascritta in inglese
-- [ ] Avvio al login ON → compare in Impostazioni di Sistema → Generali → Elementi login. Se invece compare una scritta rossa sotto il toggle, è il limite atteso di un'app firmata ad-hoc fuori da /Applications: annotalo qui: ______________________
+- [ ] Avvio al login ON → compare in Impostazioni di Sistema → Generali → Elementi login. Se invece compare una scritta rossa sotto il toggle, è il limite atteso di un'app con certificato locale fuori da /Applications: annotalo qui: ______________________
 
 ## F. Gestione errori (Task 12 — i cinque casi dello spec)
 
@@ -84,14 +88,15 @@ una garanzia — misura i tuoi.
 - [ ] Revoca il permesso Accessibilità → rilancia l'app → l'alert compare **all'avvio**, non dopo un fallimento
 - [ ] Sposta via il modello (`mv ~/Library/Application\ Support/VoiceFlow/models/ggml-base.bin /tmp/`) → rilancia → alert "Model not downloaded" → Download → barra di avanzamento che si muove → completa → l'app torna a riposo. (Poi puoi cancellare `/tmp/ggml-base.bin` o rimetterlo.)
 - [ ] Corrompi il modello (`truncate -s 1000 ~/Library/Application\ Support/VoiceFlow/models/ggml-base.bin`) → rilancia → stesso flusso di ri-download (checksum non corrisponde)
-- [ ] Occupa Ctrl+Opt+Spazio con un'altra app → rilancia VoiceFlow → alert "Hotkey already in use" con il consiglio di liberare la combinazione
+- [ ] (solo con l'opzione Control+Option+Space) Occupa la combinazione con un'altra app → rilancia VoiceFlow → alert "Hotkey already in use" con il consiglio di liberare la combinazione
 
 ## G. Limiti noti di v1 (dichiarati, non da verificare)
 
-- L'hotkey non è modificabile dall'interfaccia (ruling R25; v2).
+- L'hotkey si sceglie tra due opzioni fisse (fn, Control+Option+Space); nessun rebind libero (ruling R25/R30; v2).
+- Con fn, se il tasto 🌐 di sistema non è su "Nessuna azione", ogni pressione apre anche l'azione di sistema — l'app non può consumare l'evento.
 - Il timeout di 15 s sulla trascrizione cambia ciò che l'interfaccia mostra, non interrompe whisper.cpp che continua in background.
 - "Cancel" sul download del modello nasconde la barra ma il download continua in background fino alla fine.
-- Firma ad-hoc: l'app gira solo su questo Mac; niente notarizzazione (fuori scope v1).
+- Firma con certificato locale "VoiceFlow Dev" (identità stabile tra i rebuild, così i permessi restano): l'app gira solo su questo Mac; niente notarizzazione (fuori scope v1).
 
 ## Esito
 

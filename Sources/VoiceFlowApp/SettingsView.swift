@@ -28,7 +28,15 @@ struct SettingsPopoverView: View {
                     .foregroundStyle(.red)
             }
 
-            Text("Hotkey: Control+Option+Space").foregroundStyle(.secondary)
+            Picker("Push-to-talk key", selection: $viewModel.pushToTalkKey) {
+                Text("fn (🌐) key").tag(PushToTalkKey.fnKey)
+                Text("Control+Option+Space").tag(PushToTalkKey.controlOptionSpace)
+            }
+            if viewModel.pushToTalkKey == .fnKey {
+                Text("In System Settings › Keyboard, set \"Press 🌐 key to\" to \"Do Nothing\", or each press will also open the emoji picker.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             // A menu bar app has no Dock icon and no menu bar menu, so this
             // is the only way to quit it.
@@ -72,11 +80,21 @@ final class SettingsViewModel: ObservableObject {
         }
     }
     @Published var launchAtLoginError: String?
+    @Published var pushToTalkKey: PushToTalkKey {
+        didSet {
+            store.pushToTalkKey = pushToTalkKey
+            onPushToTalkKeyChanged()
+        }
+    }
 
-    init(store: SettingsStore) {
+    private let onPushToTalkKeyChanged: () -> Void
+
+    init(store: SettingsStore, onPushToTalkKeyChanged: @escaping () -> Void) {
         self.store = store
+        self.onPushToTalkKeyChanged = onPushToTalkKeyChanged
         self.model = store.model
         self.language = store.language
         self.launchAtLogin = store.launchAtLogin
+        self.pushToTalkKey = store.pushToTalkKey
     }
 }

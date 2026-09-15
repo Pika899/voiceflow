@@ -46,4 +46,13 @@ import Testing
         store.launchAtLogin = true
         #expect(store.launchAtLogin)
     }
+
+    @Test func defaultPushToTalkKeyIsFn() {
+        #expect(store.pushToTalkKey == .fnKey)
+    }
+
+    @Test func pushToTalkKeyRoundTrips() {
+        store.pushToTalkKey = .controlOptionSpace
+        #expect(store.pushToTalkKey == .controlOptionSpace)
+    }
 }

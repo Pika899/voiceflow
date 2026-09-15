@@ -10,11 +10,17 @@ public enum DictationLanguage: String, CaseIterable, Codable {
     case english = "en"
 }
 
+public enum PushToTalkKey: String, CaseIterable, Codable {
+    case fnKey = "fn"
+    case controlOptionSpace = "control-option-space"
+}
+
 public final class SettingsStore {
     private enum Key {
         static let model = "voiceflow.model"
         static let language = "voiceflow.language"
         static let launchAtLogin = "voiceflow.launchAtLogin"
+        static let pushToTalkKey = "voiceflow.pushToTalkKey"
     }
 
     private let defaults: UserDefaults
@@ -36,5 +42,10 @@ public final class SettingsStore {
     public var launchAtLogin: Bool {
         get { defaults.bool(forKey: Key.launchAtLogin) }
         set { defaults.set(newValue, forKey: Key.launchAtLogin) }
+    }
+
+    public var pushToTalkKey: PushToTalkKey {
+        get { PushToTalkKey(rawValue: defaults.string(forKey: Key.pushToTalkKey) ?? "") ?? .fnKey }
+        set { defaults.set(newValue.rawValue, forKey: Key.pushToTalkKey) }
     }
 }

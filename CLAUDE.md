@@ -41,9 +41,17 @@ prima di scrivere codice.
 esplicitamente): riscrittura LLM del testo, dizionario personale, snippet,
 stile per-app, sync multi-device, supporto multilingue ampio (100+ lingue),
 porting Windows/Linux, firma/notarizzazione per distribuzione pubblica,
-billing/licensing, **UI per cambiare l'hotkey** (v1 usa Control+Option+Space
-fisso; il conflitto viene rilevato e segnalato, ma la scelta di una
-combinazione diversa è rimandata a v2 — vedi ruling R25 nel piano).
+billing/licensing, **rebind libero dell'hotkey** (un key-recorder). v1 offre
+due opzioni fisse nel popover: **fn/🌐** (default, ruling R30) e
+Control+Option+Space (alternativa per tastiere esterne che non espongono fn
+a macOS; il conflitto viene rilevato e segnalato). Vedi ruling R25/R30.
+
+**Tasto fn/🌐**: è un modificatore, non un tasto, quindi non passa da Carbon
+`RegisterEventHotKey` ma da un monitor globale `.flagsChanged` (keyCode 63),
+che richiede Accessibilità — già necessaria per l'iniezione. macOS assegna
+di suo un'azione al tasto 🌐 (emoji/sorgente di input): l'utente deve
+impostare Impostazioni → Tastiera → "Premi il tasto 🌐 per" → **Nessuna
+azione**. L'app non modifica mai impostazioni di sistema; lo dice nel popover.
 
 **Nessun limite di utilizzo**: niente contatore di parole, quote settimanali
 o tempo massimo di dettatura. Non c'è un server e non c'è billing, quindi
