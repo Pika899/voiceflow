@@ -245,6 +245,12 @@ final class StatusBarController: NSObject {
             // is now ignored. State is still `.error("model-missing")` from the
             // alert that led here; don't reassign it, or it would re-prompt.
             activeDownloadID = UUID()
+        } else if case .error(let code) = state {
+            // The completion ran while the outer alert was still on the stack,
+            // so its `.error` didSet was (correctly) not allowed to stack a
+            // dialog. Now that the progress alert is gone, show it explicitly —
+            // a failed download or unloadable model must never end in silence.
+            presentAlert(for: code)
         }
     }
 
@@ -262,8 +268,9 @@ extension StatusBarController {
     /// Maps every error code the state machine can produce to spec-required,
     /// user-visible guidance. No error code reaches this app's UI silently.
     func presentAlert(for errorCode: String) {
+        let wasPresentingAlert = isPresentingAlert
         isPresentingAlert = true
-        defer { isPresentingAlert = false }
+        defer { isPresentingAlert = wasPresentingAlert }
         let alert = NSAlert()
         switch errorCode {
         case "microphone-permission":
