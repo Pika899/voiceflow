@@ -2058,11 +2058,12 @@ private var state: DictationState = .idle {
 }
 ```
 
-And make `presentAlert(for:)` own the flag — first two lines of its body:
+And make `presentAlert(for:)` own the flag — first two lines of its body. Save/restore rather than set/clear, because the download flow legitimately nests one `presentAlert` inside another:
 
 ```swift
+let wasPresentingAlert = isPresentingAlert
 isPresentingAlert = true
-defer { isPresentingAlert = false }
+defer { isPresentingAlert = wasPresentingAlert }
 ```
 
 - [ ] **Step 3: Implement proactive permission checks on launch (not just on failure)**
@@ -2130,6 +2131,12 @@ private func startModelDownload() {
         // is now ignored. State is still `.error("model-missing")` from the
         // alert that led here; don't reassign it, or it would re-prompt.
         activeDownloadID = UUID()
+    } else if case .error(let code) = state {
+        // The completion ran while the outer alert was still on the stack,
+        // so its `.error` didSet was (correctly) not allowed to stack a
+        // dialog. Now that the progress alert is gone, show it explicitly —
+        // a failed download or unloadable model must never end in silence.
+        presentAlert(for: code)
     }
 }
 ```
