@@ -13,6 +13,7 @@ final class StatusBarController: NSObject {
     private let statusItem: NSStatusItem
     private let hotkeyManager = HotkeyManager()
     private let fnKeyMonitor = FnKeyMonitor()
+    private let soundPlayer = SoundPlayer()
     private let audioCapture = AudioCapture()
     private let permissionsManager = PermissionsManager()
     private let textInjector = TextInjector()
@@ -22,7 +23,7 @@ final class StatusBarController: NSObject {
 
     private lazy var popover: NSPopover = {
         let popover = NSPopover()
-        popover.contentSize = NSSize(width: 260, height: 310)
+        popover.contentSize = NSSize(width: 260, height: 340)
         popover.behavior = .transient
         let viewModel = SettingsViewModel(store: settingsStore) { [weak self] in
             self?.configurePushToTalk()
@@ -164,6 +165,12 @@ final class StatusBarController: NSObject {
             return
         }
         do {
+            // Cue first: most of the ~0.1 s sound precedes the engine actually
+            // opening the mic. The stop cue is played after stop(), so it can
+            // never reach the buffer.
+            if settingsStore.playSounds {
+                soundPlayer.playStart()
+            }
             try audioCapture.start()
             state = .listening
         } catch {
@@ -175,6 +182,9 @@ final class StatusBarController: NSObject {
         guard case .listening = state else { return }
         state = .transcribing
         let samples = audioCapture.stop()
+        if settingsStore.playSounds {
+            soundPlayer.playStop()
+        }
 
         guard let whisperEngine else {
             state = .error("model-missing")

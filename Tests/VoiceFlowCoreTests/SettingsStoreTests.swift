@@ -55,4 +55,13 @@ import Testing
         store.pushToTalkKey = .controlOptionSpace
         #expect(store.pushToTalkKey == .controlOptionSpace)
     }
+
+    @Test func defaultPlaySoundsIsTrue() {
+        #expect(store.playSounds)
+    }
+
+    @Test func playSoundsRoundTrips() {
+        store.playSounds = false
+        #expect(!store.playSounds)
+    }
 }

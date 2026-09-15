@@ -49,6 +49,8 @@ cambiare il default: `Sources/VoiceFlowCore/SettingsStore.swift`, `?? .base`.
 
 - [ ] Impostazioni di Sistema → Tastiera → "Premi il tasto 🌐 per" → **Nessuna azione** (altrimenti ogni pressione apre anche il picker emoji)
 - [ ] TextEdit: clic in un documento, tieni premuto **fn** (default), parla, rilascia → il testo compare al cursore
+- [ ] Premendo fn si sente un suono breve (*Tink*), rilasciando un altro (*Pop*)
+- [ ] La trascrizione **non** inizia con parole spurie dovute al suono di avvio (se sì, segnalalo: la cattura va ritardata della durata del suono)
 - [ ] Nel popover, "Push-to-talk key" → Control+Option+Space: funziona senza rilanciare; torna a fn: funziona
 - [ ] Caso limite: tieni premuto fn, apri il popover col mouse e cambia opzione → la dettatura in corso si chiude (icona torna a riposo), non resta in ascolto
 - [ ] Verifica permesso: con Accessibilità concessa e **Monitoraggio input** NON concesso, fn funziona? (Se no, il monitor richiede Input Monitoring e il controllo va cambiato — segnalalo.)
@@ -80,6 +82,7 @@ una garanzia — misura i tuoi.
 - [ ] Clic sull'icona → si apre il popover con Modello, Lingua, Avvio al login
 - [ ] Cambia modello a `small`, esci e rilancia → la scelta è rimasta
 - [ ] Cambia lingua a English → una dettatura in inglese viene trascritta in inglese
+- [ ] Toggle "Play sounds" OFF → nessun suono a inizio/fine dettatura; ON → tornano
 - [ ] Avvio al login ON → compare in Impostazioni di Sistema → Generali → Elementi login. Se invece compare una scritta rossa sotto il toggle, è il limite atteso di un'app con certificato locale fuori da /Applications: annotalo qui: ______________________
 
 ## F. Gestione errori (Task 12 — i cinque casi dello spec)

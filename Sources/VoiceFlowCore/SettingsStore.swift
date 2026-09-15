@@ -21,6 +21,7 @@ public final class SettingsStore {
         static let language = "voiceflow.language"
         static let launchAtLogin = "voiceflow.launchAtLogin"
         static let pushToTalkKey = "voiceflow.pushToTalkKey"
+        static let playSounds = "voiceflow.playSounds"
     }
 
     private let defaults: UserDefaults
@@ -42,6 +43,12 @@ public final class SettingsStore {
     public var launchAtLogin: Bool {
         get { defaults.bool(forKey: Key.launchAtLogin) }
         set { defaults.set(newValue, forKey: Key.launchAtLogin) }
+    }
+
+    public var playSounds: Bool {
+        // `bool(forKey:)` reads a missing key as false; the default is on.
+        get { defaults.object(forKey: Key.playSounds) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.playSounds) }
     }
 
     public var pushToTalkKey: PushToTalkKey {

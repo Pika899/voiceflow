@@ -28,6 +28,8 @@ struct SettingsPopoverView: View {
                     .foregroundStyle(.red)
             }
 
+            Toggle("Play sounds", isOn: $viewModel.playSounds)
+
             Picker("Push-to-talk key", selection: $viewModel.pushToTalkKey) {
                 Text("fn (🌐) key").tag(PushToTalkKey.fnKey)
                 Text("Control+Option+Space").tag(PushToTalkKey.controlOptionSpace)
@@ -80,6 +82,9 @@ final class SettingsViewModel: ObservableObject {
         }
     }
     @Published var launchAtLoginError: String?
+    @Published var playSounds: Bool {
+        didSet { store.playSounds = playSounds }
+    }
     @Published var pushToTalkKey: PushToTalkKey {
         didSet {
             store.pushToTalkKey = pushToTalkKey
@@ -96,5 +101,6 @@ final class SettingsViewModel: ObservableObject {
         self.language = store.language
         self.launchAtLogin = store.launchAtLogin
         self.pushToTalkKey = store.pushToTalkKey
+        self.playSounds = store.playSounds
     }
 }
