@@ -1835,6 +1835,11 @@ struct SettingsPopoverView: View {
             }
 
             Toggle("Launch at login", isOn: $viewModel.launchAtLogin)
+            if let launchAtLoginError = viewModel.launchAtLoginError {
+                Text(launchAtLoginError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
 
             Text("Hotkey: Control+Option+Space").foregroundStyle(.secondary)
         }
@@ -1845,6 +1850,7 @@ struct SettingsPopoverView: View {
 
 final class SettingsViewModel: ObservableObject {
     private let store: SettingsStore
+    private var isRevertingLaunchAtLogin = false
 
     @Published var model: WhisperModelName {
         didSet { store.model = model }
@@ -1854,18 +1860,26 @@ final class SettingsViewModel: ObservableObject {
     }
     @Published var launchAtLogin: Bool {
         didSet {
-            store.launchAtLogin = launchAtLogin
+            guard !isRevertingLaunchAtLogin, launchAtLogin != oldValue else { return }
             do {
                 if launchAtLogin {
                     try SMAppService.mainApp.register()
                 } else {
                     try SMAppService.mainApp.unregister()
                 }
+                store.launchAtLogin = launchAtLogin
+                launchAtLoginError = nil
             } catch {
-                print("Failed to update launch-at-login: \(error)")
+                // Never let the toggle claim a state the OS refused: put it
+                // back and say why, instead of persisting a lie.
+                isRevertingLaunchAtLogin = true
+                launchAtLogin = oldValue
+                isRevertingLaunchAtLogin = false
+                launchAtLoginError = "Couldn't update Login Items: \(error.localizedDescription)"
             }
         }
     }
+    @Published var launchAtLoginError: String?
 
     init(store: SettingsStore) {
         self.store = store
@@ -1888,7 +1902,7 @@ import SwiftUI
 // Add as a stored property:
 private lazy var popover: NSPopover = {
     let popover = NSPopover()
-    popover.contentSize = NSSize(width: 260, height: 180)
+    popover.contentSize = NSSize(width: 260, height: 220)
     popover.behavior = .transient
     popover.contentViewController = NSHostingController(rootView: SettingsPopoverView(viewModel: SettingsViewModel(store: settingsStore)))
     return popover
