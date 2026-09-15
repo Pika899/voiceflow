@@ -11,20 +11,23 @@ let package = Package(
         .library(name: "VoiceFlowCore", targets: ["VoiceFlowCore"]),
         .executable(name: "LatencySpike", targets: ["LatencySpike"])
     ],
-    dependencies: [
-        .package(url: "https://github.com/soffes/HotKey", from: "0.2.1")
-    ],
+    dependencies: [],
     targets: [
         .systemLibrary(name: "CWhisper", path: "Sources/CWhisper"),
         .target(
             name: "VoiceFlowCore",
             dependencies: [
-                "CWhisper",
-                .product(name: "HotKey", package: "HotKey")
+                "CWhisper"
             ],
             linkerSettings: [
                 .unsafeFlags([
                     "-LVendor/whisper/lib",
+                    // libwhisper.a/libggml.a are C++ static libraries and need
+                    // the C++ runtime. With the (Swift-only) HotKey dependency
+                    // present this was linked in transitively; removing that
+                    // dependency (task 4) exposed the missing link and broke
+                    // the LatencySpike executable, so it is now explicit.
+                    "-lc++",
                     "-lwhisper",
                     "-lggml",
                     "-lggml-base",
