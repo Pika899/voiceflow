@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import VoiceFlowCore
 
 enum DictationState {
@@ -8,7 +9,7 @@ enum DictationState {
     case error(String)
 }
 
-final class StatusBarController {
+final class StatusBarController: NSObject {
     private let statusItem: NSStatusItem
     private let hotkeyManager = HotkeyManager()
     private let audioCapture = AudioCapture()
@@ -18,13 +19,24 @@ final class StatusBarController {
     private let modelManager = ModelManager()
     private var whisperEngine: WhisperEngine?
 
+    private lazy var popover: NSPopover = {
+        let popover = NSPopover()
+        popover.contentSize = NSSize(width: 260, height: 180)
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: SettingsPopoverView(viewModel: SettingsViewModel(store: settingsStore)))
+        return popover
+    }()
+
     private var state: DictationState = .idle {
         didSet { updateIcon() }
     }
 
-    init() {
+    override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        super.init()
         updateIcon()
+        statusItem.button?.action = #selector(togglePopover)
+        statusItem.button?.target = self
         requestMicrophoneAccessIfNeeded()
         loadModelIfPresent()
         registerHotkey()
@@ -131,6 +143,15 @@ final class StatusBarController {
             } catch {
                 DispatchQueue.main.async { self.state = .error("transcription-failed") }
             }
+        }
+    }
+
+    @objc private func togglePopover() {
+        guard let button = statusItem.button else { return }
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
 }
