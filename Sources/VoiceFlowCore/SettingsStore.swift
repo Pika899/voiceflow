@@ -3,6 +3,7 @@ import Foundation
 public enum WhisperModelName: String, CaseIterable, Codable {
     case base
     case small
+    case medium
 }
 
 public enum DictationLanguage: String, CaseIterable, Codable {

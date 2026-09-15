@@ -13,6 +13,7 @@ struct SettingsPopoverView: View {
             Picker("Model", selection: $viewModel.model) {
                 Text("Base (faster)").tag(WhisperModelName.base)
                 Text("Small (more accurate)").tag(WhisperModelName.small)
+                Text("Medium (most accurate, slower)").tag(WhisperModelName.medium)
             }
 
             Picker("Language", selection: $viewModel.language) {

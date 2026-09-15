@@ -35,6 +35,8 @@ import Testing
     @Test func modelRoundTrips() {
         store.model = .small
         #expect(store.model == .small)
+        store.model = .medium
+        #expect(store.model == .medium)
     }
 
     @Test func languageRoundTrips() {
