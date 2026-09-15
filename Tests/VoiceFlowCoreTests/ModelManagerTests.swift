@@ -18,6 +18,21 @@ import Testing
         try? FileManager.default.removeItem(at: tempDir)
     }
 
+    // The app resolves the chosen model with `knownModels.first { … }!`:
+    // a settings case without a catalogue entry would crash at launch.
+    @Test func everySettingsModelHasACatalogueEntry() {
+        for model in WhisperModelName.allCases {
+            #expect(ModelManager.knownModels.contains { $0.name == model.rawValue }, "\(model) missing from knownModels")
+        }
+    }
+
+    @Test func mediumModelIsKnown() {
+        let medium = ModelManager.knownModels.first { $0.name == "medium" }
+        #expect(medium?.fileName == "ggml-medium.bin")
+        #expect(medium?.downloadURL.absoluteString == "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin")
+        #expect(medium?.sha256.count == 64)
+    }
+
     @Test func localPathAppendsFileNameToModelsDirectory() {
         let model = ModelInfo(name: "base", fileName: "ggml-base.bin", downloadURL: URL(string: "https://example.com/ggml-base.bin")!, sha256: "irrelevant-for-this-test")
         #expect(manager.localPath(for: model) == tempDir.appendingPathComponent("ggml-base.bin"))

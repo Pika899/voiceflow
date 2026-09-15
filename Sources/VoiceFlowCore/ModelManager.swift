@@ -23,7 +23,8 @@ public enum ModelManagerError: Error {
 public final class ModelManager {
     // SHA256 values verified on this machine with `shasum -a 256` against the
     // actual downloaded files from huggingface.co/ggerganov/whisper.cpp (see
-    // task-6-report.md for the verbatim shasum output).
+    // task-6-report.md for the verbatim shasum output). They match the Git
+    // LFS pointers at huggingface.co/ggerganov/whisper.cpp/raw/main/<file>.
     public static let knownModels: [ModelInfo] = [
         ModelInfo(
             name: "base",
@@ -36,6 +37,12 @@ public final class ModelManager {
             fileName: "ggml-small.bin",
             downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin")!,
             sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"
+        ),
+        ModelInfo(
+            name: "medium",
+            fileName: "ggml-medium.bin",
+            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin")!,
+            sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"
         )
     ]
 
@@ -62,7 +69,7 @@ public final class ModelManager {
     }
 
     public static func sha256(ofFileAt url: URL) throws -> String {
-        // Streamed in chunks: model files are 150-500 MB and this runs on
+        // Streamed in chunks: model files are 150 MB to 1.5 GB and this runs on
         // every launch, so loading the whole file into memory is not acceptable
         // on the modest hardware this project explicitly targets.
         let handle = try FileHandle(forReadingFrom: url)
