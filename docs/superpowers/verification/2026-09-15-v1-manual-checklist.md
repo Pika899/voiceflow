@@ -1,0 +1,111 @@
+# VoiceFlow v1 — checklist di verifica manuale
+
+Questa è la parte del lavoro che solo una persona può fare: parlare nel
+microfono, concedere permessi, guardare la barra dei menu. Nessun passo
+qui sotto è stato eseguito da un agente, e nessun numero è stato inventato:
+le caselle sono vuote finché non le compili tu con ciò che osservi.
+
+Regola: **scrivi solo valori misurati**. Se un passo non lo fai, lascialo
+vuoto — una casella vuota è un'informazione, un numero plausibile è una bugia.
+
+## Prima di cominciare
+
+```bash
+cd "/Users/andreariganello/Desktop/AGENCY /VOICE APP"
+./scripts/package-app.sh          # produce dist/VoiceFlow.app
+open dist/VoiceFlow.app
+```
+
+Al primo avvio macOS chiede il permesso **Microfono**; l'app chiede subito
+anche **Accessibilità** (serve per scrivere nelle altre app). Concedili
+entrambi da Impostazioni di Sistema → Privacy e Sicurezza. Se l'app non
+compare nella lista Accessibilità, trascina `dist/VoiceFlow.app` dentro la
+lista.
+
+Il modello `base` è già scaricato e verificato in
+`~/Library/Application Support/VoiceFlow/models/ggml-base.bin`.
+
+## A. Latenza (Task 5 del piano — la misura che decide il modello di default)
+
+Lo spike stampa i tempi reali in console. Ripeti 2-3 volte per modello.
+
+```bash
+swift run LatencySpike /tmp/ggml-base.bin     # lo spike usa sempre Ctrl+Opt+Spazio: tienilo premuto, parla 5-10 s, rilascia
+swift run LatencySpike /tmp/ggml-small.bin
+```
+
+| Modello | Lingua | Durata audio (s) | "Total latency" stampata (s) | Testo corretto? |
+|---|---|---|---|---|
+| base  | it |  |  |  |
+| base  | en |  |  |  |
+| small | it |  |  |  |
+| small | en |  |  |  |
+
+Decisione: il default resta `base` (fallback previsto dallo spec) a meno che
+`small` risulti abbastanza veloce da usare in push-to-talk. Se vuoi
+cambiare il default: `Sources/VoiceFlowCore/SettingsStore.swift`, `?? .base`.
+
+## B. Dettatura end-to-end (Task 10 / Task 13)
+
+- [ ] Impostazioni di Sistema → Tastiera → "Premi il tasto 🌐 per" → **Nessuna azione** (altrimenti ogni pressione apre anche il picker emoji)
+- [ ] TextEdit: clic in un documento, tieni premuto **fn** (default), parla, rilascia → il testo compare al cursore
+- [ ] Premendo fn si sente un suono breve (*Tink*), rilasciando un altro (*Pop*)
+- [ ] La trascrizione **non** inizia con parole spurie dovute al suono di avvio (se sì, segnalalo: la cattura va ritardata della durata del suono)
+- [ ] Nel popover, "Push-to-talk key" → Control+Option+Space: funziona senza rilanciare; torna a fn: funziona
+- [ ] Caso limite: tieni premuto fn, apri il popover col mouse e cambia opzione → la dettatura in corso si chiude (icona torna a riposo), non resta in ascolto
+- [ ] Verifica permesso: con Accessibilità concessa e **Monitoraggio input** NON concesso, fn funziona? (Se no, il monitor richiede Input Monitoring e il controllo va cambiato — segnalalo.)
+- [ ] L'icona nella barra dei menu passa: microfono → microfono pieno (ascolto) → onda (trascrizione) → microfono
+- [ ] Due dettature di seguito (rilascia, ri-premi, parla) → tra le due c'è uno spazio, non "siamo!Adesso"; dettando subito dopo una virgola o dopo "l'" non compare uno spazio in più
+- [ ] Una seconda app (Note, o un editor): stesso risultato — inclusa la spaziatura tra dettature (in app senza Accessibilità leggibile, l'app ricorda l'ultimo carattere che ha scritto lei)
+- [ ] Un'app Electron/Chromium (VS Code, Chrome): il testo compare, **una sola volta** — qui la scrittura via Accessibilità dichiara successo senza scrivere e l'app deve accorgersene e passare alla tastiera sintetica (R33). In una casella vuota con placeholder può comparire uno spazio iniziale: limite noto
+- [ ] Safari (campo di una pagina): il testo compare una sola volta — non ancora verificato; se compare **doppio**, segnalalo (WebKit applicherebbe la scrittura in ritardo)
+- [ ] Nessuna icona nel Dock (`LSUIElement`)
+- [ ] **Osservazione R19 (parcheggiata)**: in ogni app provata il testo è comparso *tutto*? Segna qui le app in cui mancano caratteri o non compare nulla senza errore: ______________________
+
+## C. Offline (il claim centrale del prodotto)
+
+- [ ] Disattiva completamente il Wi-Fi → la dettatura funziona identica
+- [ ] Riattiva il Wi-Fi
+
+## D. Risorse (Task 13)
+
+Da Monitoraggio Attività, processo `VoiceFlow`:
+
+| Stato | Memoria (MB) | CPU (%) |
+|---|---|---|
+| A riposo (nessuna dettatura) |  |  |
+| Durante una trascrizione |  |  |
+
+Per riferimento, valori osservati dagli agenti solo all'avvio (modello base
+caricato, nessuna dettatura): 243 MB e 519 MB in due avvii diversi. Non sono
+una garanzia — misura i tuoi.
+
+## E. Impostazioni (Task 11)
+
+- [ ] Clic sull'icona → si apre il popover con Modello, Lingua, Avvio al login
+- [ ] Cambia modello a `small`, esci e rilancia → la scelta è rimasta
+- [ ] Cambia lingua a English → una dettatura in inglese viene trascritta in inglese
+- [ ] Toggle "Play sounds" OFF → nessun suono a inizio/fine dettatura; ON → tornano
+- [ ] Avvio al login ON → compare in Impostazioni di Sistema → Generali → Elementi login. Se invece compare una scritta rossa sotto il toggle, è il limite atteso di un'app con certificato locale fuori da /Applications: annotalo qui: ______________________
+
+## F. Gestione errori (Task 12 — i cinque casi dello spec)
+
+- [ ] Revoca il permesso Microfono → premi l'hotkey → alert con bottone "Open System Settings" funzionante
+- [ ] Revoca il permesso Accessibilità → rilancia l'app → l'alert compare **all'avvio**, non dopo un fallimento
+- [ ] Sposta via il modello (`mv ~/Library/Application\ Support/VoiceFlow/models/ggml-base.bin /tmp/`) → rilancia → alert "Model not downloaded" → Download → barra di avanzamento che si muove → completa → l'app torna a riposo. (Poi puoi cancellare `/tmp/ggml-base.bin` o rimetterlo.)
+- [ ] Corrompi il modello (`truncate -s 1000 ~/Library/Application\ Support/VoiceFlow/models/ggml-base.bin`) → rilancia → stesso flusso di ri-download (checksum non corrisponde)
+- [ ] (solo con l'opzione Control+Option+Space) Occupa la combinazione con un'altra app → rilancia VoiceFlow → alert "Hotkey already in use" con il consiglio di liberare la combinazione
+
+## G. Limiti noti di v1 (dichiarati, non da verificare)
+
+- L'hotkey si sceglie tra due opzioni fisse (fn, Control+Option+Space); nessun rebind libero (ruling R25/R30; v2).
+- Con fn, se il tasto 🌐 di sistema non è su "Nessuna azione", ogni pressione apre anche l'azione di sistema — l'app non può consumare l'evento.
+- Il timeout di 15 s sulla trascrizione cambia ciò che l'interfaccia mostra, non interrompe whisper.cpp che continua in background.
+- "Cancel" sul download del modello nasconde la barra ma il download continua in background fino alla fine.
+- Firma con certificato locale "VoiceFlow Dev" (identità stabile tra i rebuild, così i permessi restano): l'app gira solo su questo Mac; niente notarizzazione (fuori scope v1).
+
+## Esito
+
+Data: ________  Compilato da: ________
+
+Tutto verde? [ ] sì [ ] no — cosa non va: ______________________

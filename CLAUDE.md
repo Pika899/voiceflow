@@ -41,7 +41,22 @@ prima di scrivere codice.
 esplicitamente): riscrittura LLM del testo, dizionario personale, snippet,
 stile per-app, sync multi-device, supporto multilingue ampio (100+ lingue),
 porting Windows/Linux, firma/notarizzazione per distribuzione pubblica,
-billing/licensing.
+billing/licensing, **rebind libero dell'hotkey** (un key-recorder). v1 offre
+due opzioni fisse nel popover: **fn/🌐** (default, ruling R30) e
+Control+Option+Space (alternativa per tastiere esterne che non espongono fn
+a macOS; il conflitto viene rilevato e segnalato). Vedi ruling R25/R30.
+
+**Tasto fn/🌐**: è un modificatore, non un tasto, quindi non passa da Carbon
+`RegisterEventHotKey` ma da un monitor globale `.flagsChanged` (keyCode 63),
+che richiede Accessibilità — già necessaria per l'iniezione. macOS assegna
+di suo un'azione al tasto 🌐 (emoji/sorgente di input): l'utente deve
+impostare Impostazioni → Tastiera → "Premi il tasto 🌐 per" → **Nessuna
+azione**. L'app non modifica mai impostazioni di sistema; lo dice nel popover.
+
+**Nessun limite di utilizzo**: niente contatore di parole, quote settimanali
+o tempo massimo di dettatura. Non c'è un server e non c'è billing, quindi
+non c'è nulla da misurare — differenza voluta rispetto al piano gratuito di
+Wispr Flow.
 
 ## Privacy — non negoziabile
 
@@ -57,16 +72,59 @@ billing/licensing.
 
 ## Comandi
 
-Da compilare dopo il primo scaffold Xcode. Indicativamente:
+**Questa macchina ha solo gli Xcode Command Line Tools, non Xcode.app.**
+Quindi niente `.xcodeproj` e niente `xcodebuild`: tutto passa da Swift
+Package Manager. L'app viene assemblata in un vero `.app` da uno script.
 
 ```bash
-open VoiceFlow.xcodeproj      # apri il progetto in Xcode
-xcodebuild -scheme VoiceFlow build   # build da riga di comando
+swift build                      # build di tutto
+./scripts/test.sh                # esegue la suite di test (usare questo, non `swift test`)
+./scripts/test.sh --filter SettingsStoreTests   # un singolo gruppo di test
+./scripts/build-whisper.sh       # vendorizza e compila whisper.cpp (una tantum)
+./scripts/make-signing-cert.sh   # una tantum: certificato locale "VoiceFlow Dev" per firma stabile
+./scripts/package-app.sh         # release + assembla dist/VoiceFlow.app (firma con VoiceFlow Dev se esiste)
+open dist/VoiceFlow.app          # lancia l'app impacchettata
+swift run LatencySpike <modello> # spike di latenza, richiede un .bin ggml
 ```
 
-**Nessun test runner è configurato.** Se servono unit test, la scelta
-(XCTest è lo standard per progetti Swift/Xcode) va confermata esplicitamente
-e scritta qui insieme al comando per lanciare un singolo test.
+**Test runner: Swift Testing** (`import Testing`, `@Test`, `#expect`), non
+XCTest. XCTest è distribuito solo dentro Xcode.app e qui non esiste;
+`Testing.framework` invece arriva con i Command Line Tools e funziona.
+
+**Lanciare i test sempre con `./scripts/test.sh`, mai con `swift test`
+diretto**: questo toolchain CLT tiene il plugin delle macro di Testing in
+una sottocartella che il compilatore scansiona solo a volte, e `swift test`
+liscio fallisce a intermittenza con "plugin for module 'TestingMacros' not
+found". Il wrapper passa il percorso del plugin esplicitamente e rende ogni
+esecuzione deterministica. Verificato: stesso comando liscio fallito e poi
+passato di seguito; con il wrapper passa sempre.
+
+Vale la divisione decisa all'inizio: test automatici per la logica isolabile
+(settings, checksum, resampling, post-processing del testo), verifica
+manuale per ciò che tocca sistema e hardware (hotkey globale, microfono,
+permessi, iniezione testo).
+
+**Firma stabile o i permessi si perdono.** Una firma ad-hoc identifica l'app
+dal `cdhash` dei suoi byte: a ogni rebuild macOS la vede come un'app nuova e
+i permessi Accessibilità/Microfono già concessi smettono di valere (il toggle
+resta acceso, ma `AXIsProcessTrusted()` è falso). `scripts/make-signing-cert.sh`
+crea una volta il certificato locale "VoiceFlow Dev"; `package-app.sh` lo usa
+se esiste, e l'identità resta `identifier "com.voiceflow.app" and certificate
+leaf = …` tra un rebuild e l'altro. Al primo uso macOS chiede "Consenti
+sempre" per la chiave. Se dopo un rebuild ad-hoc i permessi sembrano
+ignorati: rimuovi e ri-aggiungi l'app nella lista Accessibilità.
+
+**Non testare l'app con `swift run VoiceFlowApp`**: `LSUIElement` e
+`NSMicrophoneUsageDescription` stanno nell'`Info.plist`, che ha effetto solo
+dentro il bundle `.app`. Senza, il processo crasha appena chiede il
+microfono.
+
+**Per catturare lo stderr dell'app usare `open --stderr <log> dist/VoiceFlow.app`,
+mai eseguire il binario del bundle da una shell.** Lanciato da un terminale
+(o da un agente dentro un IDE), TCC attribuisce Microfono e Accessibilità
+al processo *responsabile* — il terminale/IDE — e l'app vede i permessi
+come negati anche se sono concessi: sembra "aver perso i permessi" senza
+averli persi. `open` passa da LaunchServices e conserva l'identità dell'app.
 
 ## Convenzioni
 

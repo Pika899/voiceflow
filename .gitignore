@@ -10,3 +10,4 @@ Models/*.ggml
 .env.local
 dist/
 .superpowers/
+Vendor/
