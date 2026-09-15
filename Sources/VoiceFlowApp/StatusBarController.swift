@@ -306,6 +306,12 @@ extension StatusBarController {
             alert.addButton(withTitle: "OK")
             alert.runModal()
 
+        case "audio-start-failed":
+            alert.messageText = "Couldn't start recording"
+            alert.informativeText = "VoiceFlow couldn't open the microphone. Check that one is connected and not in use by another app, then try again."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+
         case "injection-failed":
             alert.messageText = "Couldn't type the text"
             alert.informativeText = "The transcription succeeded, but VoiceFlow couldn't insert it into the active app. Click into a text field and try again."
