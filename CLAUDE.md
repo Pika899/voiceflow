@@ -128,14 +128,17 @@ averli persi. `open` passa da LaunchServices e conserva l'identità dell'app.
 
 ## Versioni salvate
 
-La v1 funzionante è fissata in due modi, da non toccare quando si lavora
-a feature nuove:
+Ogni versione funzionante è fissata in due modi, da non toccare quando si
+lavora a feature nuove:
 
-- tag git `v1.0.0` sul merge di `voiceflow-v1` in `main` — per tornare al
-  sorgente esatto: `git checkout v1.0.0` (poi `./scripts/package-app.sh`);
-- `releases/VoiceFlow-v1.0.0.app.zip`, l'app già compilata e firmata (senza
+- un tag git sul commit di merge in `main` — per tornare al sorgente
+  esatto: `git checkout <tag>` (poi `./scripts/package-app.sh`);
+- `releases/VoiceFlow-<tag>.app.zip`, l'app già compilata e firmata (senza
   modello, che resta in `~/Library/Application Support/VoiceFlow/models/`).
-  Si apre con `ditto -x -k releases/VoiceFlow-v1.0.0.app.zip <cartella>`.
+  Si apre con `ditto -x -k releases/VoiceFlow-<tag>.app.zip <cartella>`.
+
+Versioni: `v1.0.0` (dettatura locale, fn, suoni, modelli base/small),
+`v1.1.0` (+ modello medium).
 
 Le feature nuove vanno su un branch dedicato partendo da `main`; `dist/`
 viene sovrascritta a ogni build e non è un posto sicuro.
