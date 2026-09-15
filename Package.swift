@@ -9,7 +9,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "VoiceFlowCore", targets: ["VoiceFlowCore"]),
-        .executable(name: "LatencySpike", targets: ["LatencySpike"])
+        .executable(name: "LatencySpike", targets: ["LatencySpike"]),
+        .executable(name: "VoiceFlowApp", targets: ["VoiceFlowApp"])
     ],
     dependencies: [],
     targets: [
@@ -43,6 +44,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "LatencySpike",
+            dependencies: ["VoiceFlowCore"]
+        ),
+        .executableTarget(
+            name: "VoiceFlowApp",
             dependencies: ["VoiceFlowCore"]
         ),
         .testTarget(
