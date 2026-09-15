@@ -27,19 +27,11 @@ public final class TextInjector {
     /// Accessibility. `.unavailable` when the app exposes no text — the
     /// keystroke-fallback apps — so the caller can use its own memory instead.
     public func cursorContext() -> CursorContext {
-        guard let element = focusedElement() else { return .unavailable }
+        guard let element = focusedElement(),
+              let snapshot = textSnapshot(of: element) else { return .unavailable }
+        guard snapshot.selectionLocation > 0 else { return .atStart }
 
-        var rangeRef: AnyObject?
-        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
-              let rangeRef,
-              CFGetTypeID(rangeRef) == AXValueGetTypeID() else {
-            return .unavailable
-        }
-        var range = CFRange()
-        guard AXValueGetValue(rangeRef as! AXValue, .cfRange, &range) else { return .unavailable }
-        guard range.location > 0 else { return .atStart }
-
-        var previousRange = CFRange(location: range.location - 1, length: 1)
+        var previousRange = CFRange(location: snapshot.selectionLocation - 1, length: 1)
         guard let rangeValue = AXValueCreate(.cfRange, &previousRange) else { return .unavailable }
         var textRef: AnyObject?
         guard AXUIElementCopyParameterizedAttributeValue(
@@ -70,20 +62,67 @@ public final class TextInjector {
     }
 
     /// Tries to write directly into the focused element's selected-text
-    /// attribute. Works well for standard text fields; returns `false` for
-    /// apps whose accessibility tree doesn't support this attribute, so the
-    /// caller falls back to synthetic keystrokes.
+    /// attribute and returns `true` only if the element's text visibly
+    /// changed. Chromium/Electron apps answer `.success` to this write and
+    /// insert nothing (observed in VS Code-family editors: selection and
+    /// character count identical 1 s later), so the return code alone would
+    /// silently drop the dictation; the read-back is what sends those apps
+    /// down the keystroke path. Elements whose selection can't be read at
+    /// all skip the write and go straight to keystrokes: the read-back is
+    /// the only evidence we have that a write landed.
+    ///
+    /// Known limit: an app that applies the write asynchronously would look
+    /// unchanged here and get the text twice. Not observed in the apps
+    /// checked by hand (TextEdit applies it before the call returns).
     private func insertViaAccessibility(_ text: String) -> Bool {
         // focusedElement() checks the CF type before casting: a third-party
         // AX implementation can hand back the wrong type alongside .success.
-        guard let focusedElement = focusedElement() else { return false }
+        guard let focusedElement = focusedElement(),
+              let before = textSnapshot(of: focusedElement) else { return false }
 
         let setResult = AXUIElementSetAttributeValue(
             focusedElement,
             kAXSelectedTextAttribute as CFString,
             text as CFTypeRef
         )
-        return setResult == .success
+        guard setResult == .success, let after = textSnapshot(of: focusedElement) else { return false }
+        return after != before
+    }
+
+    /// Selection text is included so that replacing a selection with text of
+    /// the same length still reads as a change even if the app re-selects
+    /// what it just inserted instead of collapsing the caret.
+    private struct TextSnapshot: Equatable {
+        var selectionLocation: Int
+        var selectionLength: Int
+        var selectedText: String?
+        var characterCount: Int?
+    }
+
+    private func textSnapshot(of element: AXUIElement) -> TextSnapshot? {
+        var rangeRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+              let rangeRef,
+              CFGetTypeID(rangeRef) == AXValueGetTypeID() else {
+            return nil
+        }
+        var range = CFRange()
+        guard AXValueGetValue(rangeRef as! AXValue, .cfRange, &range) else { return nil }
+
+        var selectedRef: AnyObject?
+        let selected = AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &selectedRef) == .success
+            ? selectedRef as? String
+            : nil
+        var countRef: AnyObject?
+        let count = AXUIElementCopyAttributeValue(element, kAXNumberOfCharactersAttribute as CFString, &countRef) == .success
+            ? countRef as? Int
+            : nil
+        return TextSnapshot(
+            selectionLocation: range.location,
+            selectionLength: range.length,
+            selectedText: selected,
+            characterCount: count
+        )
     }
 
     /// Fallback: synthesizes keyboard events carrying the Unicode text
