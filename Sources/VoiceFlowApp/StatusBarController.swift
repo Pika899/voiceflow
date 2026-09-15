@@ -32,10 +32,15 @@ final class StatusBarController: NSObject {
     /// main-queue completion block once inference returns (Ruling R9).
     private var dictationTimedOut = false
 
+    // `NSAlert.runModal()` pumps the run loop, so a hotkey press can arrive while
+    // an alert is up and drive the state machine back into `.error` — without
+    // this flag that would stack a second alert on top of the first.
+    private var isPresentingAlert = false
+
     private var state: DictationState = .idle {
         didSet {
             updateIcon()
-            if case .error(let code) = state {
+            if case .error(let code) = state, !isPresentingAlert {
                 presentAlert(for: code)
             }
         }
@@ -190,47 +195,56 @@ final class StatusBarController: NSObject {
         }
     }
 
+    // Identifies the download whose completion is still welcome. Cancel or a
+    // newer download replaces it, so a stale completion can neither dismiss an
+    // unrelated alert nor overwrite whatever state the user has moved on to.
+    private var activeDownloadID = UUID()
+
     /// Downloads the currently configured model with a visible, non-silent
     /// progress bar — this is the app's only network call.
     private func startModelDownload() {
         let model = ModelManager.knownModels.first { $0.name == settingsStore.model.rawValue }!
+        let downloadID = UUID()
+        activeDownloadID = downloadID
+
         let progressAlert = NSAlert()
         progressAlert.messageText = "Downloading \(model.name) model..."
+        progressAlert.addButton(withTitle: "Cancel")
         let progressBar = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 250, height: 20))
         progressBar.style = .bar
         progressBar.minValue = 0
         progressBar.maxValue = 1
         progressAlert.accessoryView = progressBar
-        // Under-specified in the brief: without a way out, a stalled or slow
-        // download traps the user in a blocking modal alert indefinitely.
-        // Cancel only stops the UI from waiting — the URLSession download
-        // task itself is not cancelled and keeps running in the background,
-        // which is acceptable for v1.
-        progressAlert.addButton(withTitle: "Cancel")
 
         modelManager.download(model, progress: { fraction in
             DispatchQueue.main.async { progressBar.doubleValue = fraction }
         }, completion: { [weak self] result in
             DispatchQueue.main.async {
-                // Under-specified in the brief: nothing else ever closes this
-                // alert, since it has no OK button of its own. Stop the modal
-                // session so `runModal()` below returns once the download
-                // finishes, before reflecting the outcome in `state`.
-                NSApp.stopModal()
+                guard let self, self.activeDownloadID == downloadID else { return }
+                // Only dismiss our own progress alert — never whatever else
+                // may be modal by the time a long download finishes.
+                if NSApp.modalWindow == progressAlert.window {
+                    NSApp.stopModal()
+                }
                 switch result {
                 case .success:
-                    self?.loadModelIfPresent()
-                    self?.state = .idle
+                    self.loadModelIfPresent()
+                    if self.whisperEngine != nil {
+                        self.state = .idle
+                    }
                 case .failure(let error):
-                    self?.state = .error("model-download-failed: \(error)")
+                    self.state = .error("model-download-failed: \(error)")
                 }
             }
         })
 
-        if progressAlert.runModal() == .alertFirstButtonReturn {
-            // User clicked Cancel: return to model-missing rather than
-            // leaving the icon reflecting whatever state preceded this call.
-            state = .error("model-missing")
+        let response = progressAlert.runModal()
+        if response == .alertFirstButtonReturn {
+            // Cancel: the URLSession task keeps running in the background (v1
+            // limitation — ModelManager exposes no cancel), but its completion
+            // is now ignored. State is still `.error("model-missing")` from the
+            // alert that led here; don't reassign it, or it would re-prompt.
+            activeDownloadID = UUID()
         }
     }
 
@@ -248,6 +262,8 @@ extension StatusBarController {
     /// Maps every error code the state machine can produce to spec-required,
     /// user-visible guidance. No error code reaches this app's UI silently.
     func presentAlert(for errorCode: String) {
+        isPresentingAlert = true
+        defer { isPresentingAlert = false }
         let alert = NSAlert()
         switch errorCode {
         case "microphone-permission":
@@ -289,9 +305,21 @@ extension StatusBarController {
             alert.addButton(withTitle: "OK")
             alert.runModal()
 
+        case "model-load-failed":
+            // Checksum passed but whisper refused the file: offer the same
+            // re-download path as a missing model rather than a bare error.
+            alert.messageText = "Model couldn't be loaded"
+            alert.informativeText = "The speech model is present but failed to load. Download it again?"
+            alert.addButton(withTitle: "Download")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                startModelDownload()
+            }
+
         case "hotkey-conflict":
             alert.messageText = "Hotkey already in use"
-            alert.informativeText = "Control+Option+Space is already registered by another app. Choose a different one in Settings."
+            // v1 has no rebind UI, so the only honest advice is to free the shortcut.
+            alert.informativeText = "Control+Option+Space is already registered by another app. Quit that app or free the shortcut there, then relaunch VoiceFlow."
             alert.addButton(withTitle: "OK")
             alert.runModal()
 
