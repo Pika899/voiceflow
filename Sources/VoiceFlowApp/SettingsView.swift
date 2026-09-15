@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ServiceManagement
 import VoiceFlowCore
@@ -28,6 +29,11 @@ struct SettingsPopoverView: View {
             }
 
             Text("Hotkey: Control+Option+Space").foregroundStyle(.secondary)
+
+            // A menu bar app has no Dock icon and no menu bar menu, so this
+            // is the only way to quit it.
+            Divider()
+            Button("Quit VoiceFlow") { NSApp.terminate(nil) }
         }
         .padding()
         .frame(width: 260)

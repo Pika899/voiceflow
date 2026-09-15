@@ -21,7 +21,7 @@ final class StatusBarController: NSObject {
 
     private lazy var popover: NSPopover = {
         let popover = NSPopover()
-        popover.contentSize = NSSize(width: 260, height: 220)
+        popover.contentSize = NSSize(width: 260, height: 260)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(rootView: SettingsPopoverView(viewModel: SettingsViewModel(store: settingsStore)))
         return popover
