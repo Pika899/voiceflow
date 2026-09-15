@@ -41,7 +41,14 @@ prima di scrivere codice.
 esplicitamente): riscrittura LLM del testo, dizionario personale, snippet,
 stile per-app, sync multi-device, supporto multilingue ampio (100+ lingue),
 porting Windows/Linux, firma/notarizzazione per distribuzione pubblica,
-billing/licensing.
+billing/licensing, **UI per cambiare l'hotkey** (v1 usa Control+Option+Space
+fisso; il conflitto viene rilevato e segnalato, ma la scelta di una
+combinazione diversa è rimandata a v2 — vedi ruling R25 nel piano).
+
+**Nessun limite di utilizzo**: niente contatore di parole, quote settimanali
+o tempo massimo di dettatura. Non c'è un server e non c'è billing, quindi
+non c'è nulla da misurare — differenza voluta rispetto al piano gratuito di
+Wispr Flow.
 
 ## Privacy — non negoziabile
 

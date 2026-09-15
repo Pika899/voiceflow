@@ -8,7 +8,11 @@
 >
 > **Ruling (recorded 2026-09-15, before Task 1 dispatch):** this machine has only the Xcode Command Line Tools installed, not Xcode.app (`xcodebuild` fails: "requires Xcode"; `/Applications` has no Xcode). The plan as originally written assumed an Xcode-GUI-created `.xcodeproj` for Task 10 — that path is not executable by an automated subagent (no GUI) nor by this machine (no Xcode.app) as it stands. Ruling: `VoiceFlowApp` ships as a plain SPM `executableTarget` alongside `LatencySpike`, with a hand-written `Info.plist` under `Resources/VoiceFlowApp/` and a `scripts/package-app.sh` that runs `swift build -c release`, assembles `dist/VoiceFlow.app`, and ad-hoc codesigns it. This is a strictly more automatable, non-GUI equivalent of what Task 10 originally specified — same target name, same files, same wiring — and it directly produces the `.app` executable requested for manual testing. If Xcode.app is installed later, `swift package generate-xcodeproj`-style tooling or a manually authored `.xcodeproj` can be added without touching `VoiceFlowCore` or any other task's code. Cost if wrong: the app runs unsigned/ad-hoc rather than through a "real" Xcode scheme — acceptable for v1's stated scope (no notarization, no distribution outside this Mac).
 
-**Tech Stack:** Swift 5.9+, Swift Package Manager, AVFoundation (`AVAudioEngine`, `AVAudioConverter`), whisper.cpp (via its own SPM package), the `HotKey` SPM package (soffes/HotKey) for global hotkeys, ApplicationServices (`AXUIElement`) + CoreGraphics (`CGEvent`) for text injection, `ServiceManagement` (`SMAppService`) for launch-at-login, XCTest for unit tests, macOS 13+ (Ventura) as the platform floor.
+**Tech Stack:** Swift 6.4 toolchain (package language mode 5.9), Swift Package Manager, AVFoundation (`AVAudioEngine`, `AVAudioConverter`), whisper.cpp v1.9.4 vendored and built from source into static libraries via CMake (R10 — upstream no longer ships an SPM manifest), Carbon `RegisterEventHotKey` for the global hotkey (R16 — the `HotKey` package cannot report conflicts), ApplicationServices (`AXUIElement`) + CoreGraphics (`CGEvent`) for text injection, `ServiceManagement` (`SMAppService`) for launch-at-login, Swift Testing for unit tests (R13 — XCTest ships only with Xcode.app, absent here), macOS 14 as the platform floor (R13/R20).
+
+> The header above was synced after the fact with the rulings recorded inline in the tasks; where the two ever disagree, the task text and the ledger win.
+
+> **Ruling R25 (scope):** the spec lists "hotkey" among v1's minimal settings and says a conflict should let the user "sceglierne un'altra nelle impostazioni". v1 ships Control+Option+Space fixed, with conflict detection and an honest alert, and no rebind UI — a key-recorder control is net-new UI with its own validation surface, and nothing in the spec's data flow depends on it. Deferred to v2 and recorded in `CLAUDE.md`'s exclusion list. Cost if wrong: a user whose other app owns Control+Option+Space has to free it there rather than change it here.
 
 **Spec:** `docs/superpowers/specs/2026-09-15-voice-dictation-mac-design.md`
 
@@ -21,7 +25,7 @@
 - The model file is never bundled in the app binary; it is downloaded on first run into `~/Library/Application Support/VoiceFlow/models/` (project CLAUDE.md, spec: "ModelManager").
 - The project folder path contains a space (`.../AGENCY /VOICE APP`) — always quote it in shell commands.
 - `LSUIElement = true` in the app's `Info.plist` — no Dock icon, no main window.
-- Platform floor: macOS 13 (Ventura), required for `SMAppService` (launch-at-login).
+- Platform floor: macOS 14 (R13: the CLT's Testing.framework targets 14.0; `SMAppService` needs 13+ anyway).
 - No unattended automation ships without error handling (user CLAUDE.md: "Consegna") — this is why Task 12 exists as a dedicated task, not an afterthought.
 - Explicitly out of scope for every task below: LLM text cleanup/rewriting, personal dictionary, snippets, per-app style, multi-device sync, 100+ language support, Windows/Linux, code signing/notarization, billing (spec: "Fuori scope").
 - No usage caps of any kind — no word limit, no weekly quota, no dictation-time limit. This is a deliberate product difference from Wispr Flow (whose free tier caps usage at ~2000 words/week): since there's no server and no billing, there is nothing to meter, and no task in this plan should add metering/quota logic.
@@ -1999,6 +2003,12 @@ extension StatusBarController {
         case "transcription-failed":
             alert.messageText = "Transcription failed"
             alert.informativeText = "Something went wrong during transcription. Try again."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+
+        case "audio-start-failed":
+            alert.messageText = "Couldn't start recording"
+            alert.informativeText = "VoiceFlow couldn't open the microphone. Check that one is connected and not in use by another app, then try again."
             alert.addButton(withTitle: "OK")
             alert.runModal()
 
