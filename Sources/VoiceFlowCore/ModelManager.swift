@@ -62,9 +62,19 @@ public final class ModelManager {
     }
 
     public static func sha256(ofFileAt url: URL) throws -> String {
-        let data = try Data(contentsOf: url)
-        let digest = SHA256.hash(data: data)
-        return digest.map { String(format: "%02x", $0) }.joined()
+        // Streamed in chunks: model files are 150-500 MB and this runs on
+        // every launch, so loading the whole file into memory is not acceptable
+        // on the modest hardware this project explicitly targets.
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        let chunkSize = 1 << 20
+        while true {
+            let chunk = try handle.read(upToCount: chunkSize) ?? Data()
+            if chunk.isEmpty { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     public func download(
