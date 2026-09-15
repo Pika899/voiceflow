@@ -27,8 +27,18 @@ final class StatusBarController: NSObject {
         return popover
     }()
 
+    /// Only ever touched on the main queue: written by the timeout work item
+    /// (fires on the main queue) and read by the transcription worker's
+    /// main-queue completion block once inference returns (Ruling R9).
+    private var dictationTimedOut = false
+
     private var state: DictationState = .idle {
-        didSet { updateIcon() }
+        didSet {
+            updateIcon()
+            if case .error(let code) = state {
+                presentAlert(for: code)
+            }
+        }
     }
 
     override init() {
@@ -40,6 +50,12 @@ final class StatusBarController: NSObject {
         requestMicrophoneAccessIfNeeded()
         loadModelIfPresent()
         registerHotkey()
+
+        // Proactive check: detect missing Accessibility access at launch
+        // rather than waiting for the first injection to fail silently.
+        if permissionsManager.accessibilityStatus() != .granted {
+            state = .error("accessibility-permission")
+        }
     }
 
     /// Ruling R7: ask for microphone access at launch, not mid-dictation.
@@ -85,7 +101,9 @@ final class StatusBarController: NSObject {
     private func registerHotkey() {
         hotkeyManager.onPress = { [weak self] in self?.beginDictation() }
         hotkeyManager.onRelease = { [weak self] in self?.finishDictation() }
-        _ = hotkeyManager.register()
+        if !hotkeyManager.register() {
+            state = .error("hotkey-conflict")
+        }
     }
 
     private func beginDictation() {
@@ -124,6 +142,24 @@ final class StatusBarController: NSObject {
             return
         }
 
+        // Ruling R9: `dictationTimedOut` is written by this timer (main queue)
+        // and read by the worker's main-queue completion block below — never
+        // touched off the main queue, so no separate synchronization is needed.
+        //
+        // Honest limitation: `whisper_full` (inside `transcribe`) is
+        // synchronous and blocking, and it is NOT aborted when this timeout
+        // fires. This only changes what the UI reports after 15 seconds; the
+        // background thread keeps running inference until it returns, and its
+        // late result is simply dropped below. This is a UI-visible timeout,
+        // not a cancellation.
+        dictationTimedOut = false
+        let timeoutWorkItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.dictationTimedOut = true
+            self.state = .error("transcription-timeout")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeoutWorkItem)
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
@@ -131,6 +167,10 @@ final class StatusBarController: NSObject {
                 // Injection drives the Accessibility API and posts CGEvents,
                 // both of which belong on the main thread.
                 DispatchQueue.main.async {
+                    timeoutWorkItem.cancel()
+                    // The UI already reported a timeout; drop the late result
+                    // rather than injecting text the user has stopped expecting.
+                    guard !self.dictationTimedOut else { return }
                     do {
                         try self.textInjector.inject(result.text)
                         self.state = .idle
@@ -141,8 +181,56 @@ final class StatusBarController: NSObject {
                     }
                 }
             } catch {
-                DispatchQueue.main.async { self.state = .error("transcription-failed") }
+                DispatchQueue.main.async {
+                    timeoutWorkItem.cancel()
+                    guard !self.dictationTimedOut else { return }
+                    self.state = .error("transcription-failed")
+                }
             }
+        }
+    }
+
+    /// Downloads the currently configured model with a visible, non-silent
+    /// progress bar — this is the app's only network call.
+    private func startModelDownload() {
+        let model = ModelManager.knownModels.first { $0.name == settingsStore.model.rawValue }!
+        let progressAlert = NSAlert()
+        progressAlert.messageText = "Downloading \(model.name) model..."
+        let progressBar = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 250, height: 20))
+        progressBar.style = .bar
+        progressBar.minValue = 0
+        progressBar.maxValue = 1
+        progressAlert.accessoryView = progressBar
+        // Under-specified in the brief: without a way out, a stalled or slow
+        // download traps the user in a blocking modal alert indefinitely.
+        // Cancel only stops the UI from waiting — the URLSession download
+        // task itself is not cancelled and keeps running in the background,
+        // which is acceptable for v1.
+        progressAlert.addButton(withTitle: "Cancel")
+
+        modelManager.download(model, progress: { fraction in
+            DispatchQueue.main.async { progressBar.doubleValue = fraction }
+        }, completion: { [weak self] result in
+            DispatchQueue.main.async {
+                // Under-specified in the brief: nothing else ever closes this
+                // alert, since it has no OK button of its own. Stop the modal
+                // session so `runModal()` below returns once the download
+                // finishes, before reflecting the outcome in `state`.
+                NSApp.stopModal()
+                switch result {
+                case .success:
+                    self?.loadModelIfPresent()
+                    self?.state = .idle
+                case .failure(let error):
+                    self?.state = .error("model-download-failed: \(error)")
+                }
+            }
+        })
+
+        if progressAlert.runModal() == .alertFirstButtonReturn {
+            // User clicked Cancel: return to model-missing rather than
+            // leaving the icon reflecting whatever state preceded this call.
+            state = .error("model-missing")
         }
     }
 
@@ -152,6 +240,66 @@ final class StatusBarController: NSObject {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+}
+
+extension StatusBarController {
+    /// Maps every error code the state machine can produce to spec-required,
+    /// user-visible guidance. No error code reaches this app's UI silently.
+    func presentAlert(for errorCode: String) {
+        let alert = NSAlert()
+        switch errorCode {
+        case "microphone-permission":
+            alert.messageText = "Microphone access needed"
+            alert.informativeText = "VoiceFlow needs microphone access to transcribe your speech. Grant it in System Settings > Privacy & Security > Microphone."
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+            }
+
+        case "accessibility-permission":
+            alert.messageText = "Accessibility access needed"
+            alert.informativeText = "VoiceFlow needs Accessibility access to type text into other apps. Grant it in System Settings > Privacy & Security > Accessibility."
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                permissionsManager.promptAccessibilityAccess()
+            }
+
+        case "model-missing":
+            alert.messageText = "Model not downloaded"
+            alert.informativeText = "The speech model hasn't been downloaded yet, or failed a corruption check. Download it now?"
+            alert.addButton(withTitle: "Download")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                startModelDownload()
+            }
+
+        case "transcription-failed", "transcription-timeout":
+            alert.messageText = "Transcription failed"
+            alert.informativeText = "Something went wrong during transcription. Try again."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+
+        case "injection-failed":
+            alert.messageText = "Couldn't type the text"
+            alert.informativeText = "The transcription succeeded, but VoiceFlow couldn't insert it into the active app. Click into a text field and try again."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+
+        case "hotkey-conflict":
+            alert.messageText = "Hotkey already in use"
+            alert.informativeText = "Control+Option+Space is already registered by another app. Choose a different one in Settings."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+
+        default:
+            alert.messageText = "Unexpected error"
+            alert.informativeText = errorCode
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 }
