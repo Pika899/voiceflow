@@ -77,6 +77,15 @@ final class StatusBarController {
     }
 
     private func beginDictation() {
+        // A press while the previous inference is still running must not
+        // restart capture: the old completion would later overwrite
+        // `.listening` and the new recording would be silently dropped.
+        switch state {
+        case .listening, .transcribing:
+            return
+        case .idle, .error:
+            break
+        }
         guard permissionsManager.microphoneStatus() == .granted else {
             state = .error("microphone-permission")
             return
