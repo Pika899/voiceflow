@@ -38,8 +38,12 @@ public sealed class WhisperEngine : IDisposable
 
         try
         {
+            // Whisper.net defaults to all hardware threads; whisper.cpp's own
+            // whisper_full_default_params (what the macOS engine inherits) caps
+            // n_threads at min(4, hardware_concurrency), so match that here.
             using var processor = factory.CreateBuilder()
                 .WithLanguage(languageCode)
+                .WithThreads(Math.Min(4, Environment.ProcessorCount))
                 .Build();
 
             await foreach (var segment in processor.ProcessAsync(samples16k, ct).ConfigureAwait(false))
