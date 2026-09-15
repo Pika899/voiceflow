@@ -119,6 +119,13 @@ ignorati: rimuovi e ri-aggiungi l'app nella lista Accessibilità.
 dentro il bundle `.app`. Senza, il processo crasha appena chiede il
 microfono.
 
+**Per catturare lo stderr dell'app usare `open --stderr <log> dist/VoiceFlow.app`,
+mai eseguire il binario del bundle da una shell.** Lanciato da un terminale
+(o da un agente dentro un IDE), TCC attribuisce Microfono e Accessibilità
+al processo *responsabile* — il terminale/IDE — e l'app vede i permessi
+come negati anche se sono concessi: sembra "aver perso i permessi" senza
+averli persi. `open` passa da LaunchServices e conserva l'identità dell'app.
+
 ## Convenzioni
 
 - **Lingua**: conversazione e documentazione in italiano; codice, commenti,

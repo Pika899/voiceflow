@@ -56,7 +56,9 @@ cambiare il default: `Sources/VoiceFlowCore/SettingsStore.swift`, `?? .base`.
 - [ ] Verifica permesso: con Accessibilità concessa e **Monitoraggio input** NON concesso, fn funziona? (Se no, il monitor richiede Input Monitoring e il controllo va cambiato — segnalalo.)
 - [ ] L'icona nella barra dei menu passa: microfono → microfono pieno (ascolto) → onda (trascrizione) → microfono
 - [ ] Due dettature di seguito (rilascia, ri-premi, parla) → tra le due c'è uno spazio, non "siamo!Adesso"; dettando subito dopo una virgola o dopo "l'" non compare uno spazio in più
-- [ ] Una seconda app (Note, o un editor): stesso risultato — inclusa la spaziatura tra dettature (in app senza Accessibilità leggibile, es. Electron, l'app ricorda l'ultimo carattere che ha scritto lei)
+- [ ] Una seconda app (Note, o un editor): stesso risultato — inclusa la spaziatura tra dettature (in app senza Accessibilità leggibile, l'app ricorda l'ultimo carattere che ha scritto lei)
+- [ ] Un'app Electron/Chromium (VS Code, Chrome): il testo compare, **una sola volta** — qui la scrittura via Accessibilità dichiara successo senza scrivere e l'app deve accorgersene e passare alla tastiera sintetica (R33). In una casella vuota con placeholder può comparire uno spazio iniziale: limite noto
+- [ ] Safari (campo di una pagina): il testo compare una sola volta — non ancora verificato; se compare **doppio**, segnalalo (WebKit applicherebbe la scrittura in ritardo)
 - [ ] Nessuna icona nel Dock (`LSUIElement`)
 - [ ] **Osservazione R19 (parcheggiata)**: in ogni app provata il testo è comparso *tutto*? Segna qui le app in cui mancano caratteri o non compare nulla senza errore: ______________________
 
