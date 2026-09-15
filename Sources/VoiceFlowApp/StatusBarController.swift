@@ -20,6 +20,9 @@ final class StatusBarController: NSObject {
     private let settingsStore = SettingsStore()
     private let modelManager = ModelManager()
     private var whisperEngine: WhisperEngine?
+    // Last character this app typed, for apps whose text isn't readable
+    // through Accessibility: consecutive dictations must still get a space.
+    private var lastInjectedCharacter: Character?
 
     private lazy var popover: NSPopover = {
         let popover = NSPopover()
@@ -150,6 +153,19 @@ final class StatusBarController: NSObject {
         }
     }
 
+    /// Inserts a transcription with a leading space when it would otherwise
+    /// run into the text before the cursor (e.g. "siamo!Adesso").
+    private func inject(_ text: String) throws {
+        guard !text.isEmpty else { return }
+        var context = textInjector.cursorContext()
+        if context == .unavailable, let last = lastInjectedCharacter {
+            context = .character(last)
+        }
+        let joined = TextJoiner.prefix(for: text, precededBy: context) + text
+        try textInjector.inject(joined)
+        lastInjectedCharacter = joined.last
+    }
+
     private func beginDictation() {
         // A press while the previous inference is still running must not
         // restart capture: the old completion would later overwrite
@@ -225,7 +241,7 @@ final class StatusBarController: NSObject {
                     // rather than injecting text the user has stopped expecting.
                     guard !self.dictationTimedOut else { return }
                     do {
-                        try self.textInjector.inject(result.text)
+                        try self.inject(result.text)
                         self.state = .idle
                     } catch TextInjectionError.accessibilityNotTrusted {
                         self.state = .error("accessibility-permission")

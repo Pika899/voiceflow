@@ -55,7 +55,8 @@ cambiare il default: `Sources/VoiceFlowCore/SettingsStore.swift`, `?? .base`.
 - [ ] Caso limite: tieni premuto fn, apri il popover col mouse e cambia opzione → la dettatura in corso si chiude (icona torna a riposo), non resta in ascolto
 - [ ] Verifica permesso: con Accessibilità concessa e **Monitoraggio input** NON concesso, fn funziona? (Se no, il monitor richiede Input Monitoring e il controllo va cambiato — segnalalo.)
 - [ ] L'icona nella barra dei menu passa: microfono → microfono pieno (ascolto) → onda (trascrizione) → microfono
-- [ ] Una seconda app (Note, o un editor): stesso risultato
+- [ ] Due dettature di seguito (rilascia, ri-premi, parla) → tra le due c'è uno spazio, non "siamo!Adesso"; dettando subito dopo una virgola o dopo "l'" non compare uno spazio in più
+- [ ] Una seconda app (Note, o un editor): stesso risultato — inclusa la spaziatura tra dettature (in app senza Accessibilità leggibile, es. Electron, l'app ricorda l'ultimo carattere che ha scritto lei)
 - [ ] Nessuna icona nel Dock (`LSUIElement`)
 - [ ] **Osservazione R19 (parcheggiata)**: in ogni app provata il testo è comparso *tutto*? Segna qui le app in cui mancano caratteri o non compare nulla senza errore: ______________________
 

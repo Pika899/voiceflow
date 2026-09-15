@@ -23,11 +23,37 @@ public final class TextInjector {
         }
     }
 
-    /// Tries to write directly into the focused element's selected-text
-    /// attribute. Works well for standard text fields; returns `false` for
-    /// apps whose accessibility tree doesn't support this attribute, so the
-    /// caller falls back to synthetic keystrokes.
-    private func insertViaAccessibility(_ text: String) -> Bool {
+    /// What precedes the insertion point in the focused element, read via
+    /// Accessibility. `.unavailable` when the app exposes no text — the
+    /// keystroke-fallback apps — so the caller can use its own memory instead.
+    public func cursorContext() -> CursorContext {
+        guard let element = focusedElement() else { return .unavailable }
+
+        var rangeRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+              let rangeRef,
+              CFGetTypeID(rangeRef) == AXValueGetTypeID() else {
+            return .unavailable
+        }
+        var range = CFRange()
+        guard AXValueGetValue(rangeRef as! AXValue, .cfRange, &range) else { return .unavailable }
+        guard range.location > 0 else { return .atStart }
+
+        var previousRange = CFRange(location: range.location - 1, length: 1)
+        guard let rangeValue = AXValueCreate(.cfRange, &previousRange) else { return .unavailable }
+        var textRef: AnyObject?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element,
+            kAXStringForRangeParameterizedAttribute as CFString,
+            rangeValue,
+            &textRef
+        ) == .success, let previous = (textRef as? String)?.first else {
+            return .unavailable
+        }
+        return .character(previous)
+    }
+
+    private func focusedElement() -> AXUIElement? {
         let systemWide = AXUIElementCreateSystemWide()
         var focusedElementRef: AnyObject?
         let copyResult = AXUIElementCopyAttributeValue(
@@ -35,15 +61,22 @@ public final class TextInjector {
             kAXFocusedUIElementAttribute as CFString,
             &focusedElementRef
         )
-        // A third-party AX implementation can hand back the wrong CF type
-        // alongside .success; checking the type ID keeps a forced cast from
-        // taking down the whole app on every dictation.
         guard copyResult == .success,
               let focusedElementRef,
               CFGetTypeID(focusedElementRef) == AXUIElementGetTypeID() else {
-            return false
+            return nil
         }
-        let focusedElement = focusedElementRef as! AXUIElement
+        return (focusedElementRef as! AXUIElement)
+    }
+
+    /// Tries to write directly into the focused element's selected-text
+    /// attribute. Works well for standard text fields; returns `false` for
+    /// apps whose accessibility tree doesn't support this attribute, so the
+    /// caller falls back to synthetic keystrokes.
+    private func insertViaAccessibility(_ text: String) -> Bool {
+        // focusedElement() checks the CF type before casting: a third-party
+        // AX implementation can hand back the wrong type alongside .success.
+        guard let focusedElement = focusedElement() else { return false }
 
         let setResult = AXUIElementSetAttributeValue(
             focusedElement,
