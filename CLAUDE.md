@@ -126,6 +126,20 @@ al processo *responsabile* — il terminale/IDE — e l'app vede i permessi
 come negati anche se sono concessi: sembra "aver perso i permessi" senza
 averli persi. `open` passa da LaunchServices e conserva l'identità dell'app.
 
+## Versioni salvate
+
+La v1 funzionante è fissata in due modi, da non toccare quando si lavora
+a feature nuove:
+
+- tag git `v1.0.0` sul merge di `voiceflow-v1` in `main` — per tornare al
+  sorgente esatto: `git checkout v1.0.0` (poi `./scripts/package-app.sh`);
+- `releases/VoiceFlow-v1.0.0.app.zip`, l'app già compilata e firmata (senza
+  modello, che resta in `~/Library/Application Support/VoiceFlow/models/`).
+  Si apre con `ditto -x -k releases/VoiceFlow-v1.0.0.app.zip <cartella>`.
+
+Le feature nuove vanno su un branch dedicato partendo da `main`; `dist/`
+viene sovrascritta a ogni build e non è un posto sicuro.
+
 ## Convenzioni
 
 - **Lingua**: conversazione e documentazione in italiano; codice, commenti,
