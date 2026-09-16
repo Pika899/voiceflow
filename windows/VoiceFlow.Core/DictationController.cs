@@ -10,10 +10,10 @@ public enum DictationState
 
 /// <summary>
 /// Push-to-talk state machine: press -&gt; capture audio -&gt; release -&gt;
-/// transcribe -&gt; inject. Ports it against (<see cref="IAudioCapture"/>,
+/// transcribe -&gt; inject. Written against injected ports (<see cref="IAudioCapture"/>,
 /// <see cref="IHotkey"/>, <see cref="ITextInjector"/>, <see cref="ISoundPlayer"/>,
-/// <see cref="ITranscriber"/>) are UI-free and hardware-free, so the whole flow
-/// is unit-testable.
+/// <see cref="ITranscriber"/>), all UI-free and hardware-free, so the whole
+/// flow is unit-testable.
 ///
 /// Threading contract: every public entry point and every callback (hotkey
 /// press/release, scheduled timeout, transcription completion) is expected to
