@@ -8,7 +8,7 @@ public sealed record TranscriptionResult(string Text, TimeSpan Duration);
 
 public sealed class WhisperEngineException(string message, Exception? inner = null) : Exception(message, inner);
 
-public sealed class WhisperEngine : IDisposable
+public sealed class WhisperEngine : IDisposable, ITranscriber
 {
     private readonly WhisperFactory factory;
 
