@@ -214,6 +214,12 @@ disinstallazione.
 
 ## Limiti noti
 
+- **CPU senza AVX2**: la libreria whisper.cpp standard di Whisper.net richiede
+  AVX2; su processori che non ce l'hanno (es. Intel Core di 2ª/3ª generazione
+  come l'i7-3770, o molti Pentium/Celeron) l'app include anche il runtime
+  `Whisper.net.Runtime.NoAvx`, che Whisper.net sceglie da solo. Senza di esso
+  il caricamento del modello fallisce con la finestra "Model couldn't be
+  loaded" anche a file integro (osservato su un i7-3770 il 2026-09-17).
 - **Finestre elevate (amministratore)**: `SendInput` non può scrivere in una
   finestra che gira con privilegi più alti del processo che invia l'input
   (UIPI — User Interface Privilege Isolation, una protezione di Windows).

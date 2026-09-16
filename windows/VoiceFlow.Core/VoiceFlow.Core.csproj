@@ -8,6 +8,9 @@
   <ItemGroup>
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <!-- The default runtime needs AVX2; Whisper.net falls back to this one on
+         CPUs without it (found on an Intel i7-3770, Ivy Bridge, 2026-09-17). -->
+    <PackageReference Include="Whisper.net.Runtime.NoAvx" Version="1.9.1" />
   </ItemGroup>
 
 </Project>

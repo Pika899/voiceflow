@@ -5,8 +5,8 @@ namespace VoiceFlow.App;
 
 /// <summary>
 /// Small fixed-size settings window, mirroring <c>SettingsPopoverView.swift</c>:
-/// model, language, sound and launch-at-login controls, a static push-to-talk
-/// note (v1 has no rebind UI — see the Windows port's task brief) and a Quit
+/// model, language, sound and launch-at-login controls, a push-to-talk combo
+/// with two fixed options (v1 has no free rebind UI, like the Mac) and a Quit
 /// button, since a tray app with no Dock icon and no menu bar has no other way
 /// to quit. Every field saves through <see cref="SettingsStore"/> immediately;
 /// a model change calls back into <see cref="TrayApp"/> so it can reload or
