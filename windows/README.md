@@ -123,12 +123,34 @@ a ogni release, non è un posto dove salvare stato.
    l'hotkey, se cambi modello dalle Impostazioni verso uno non ancora
    scaricato: la finestra compare non appena selezioni la nuova voce.
 
-7. **Dettatura**: tieni premuto **Ctrl+Alt+Space** in un campo di testo,
-   parla, rilascia. Il rilascio è rilevato appena una qualsiasi delle tre
-   componenti della combinazione si solleva (non serve rilasciarle tutte
-   insieme) — stesso comportamento del rilascio dell'hotkey sul Mac.
+7. **Dettatura**: tieni premuto **Ctrl** (tasto da solo, senza combinarlo con
+   altro) in un campo di testo, parla, rilascia. È l'opzione di default.
+   Dalle Impostazioni puoi passare a **Ctrl+Alt+Space** come alternativa
+   (utile su tastiere esterne o se preferisci una combinazione più
+   "esplicita"); il cambio è immediato, senza bisogno di rilanciare l'app.
    L'icona nella tray passa grigia (a riposo) → rossa (in ascolto) → blu
    (in trascrizione) → grigia.
+
+   Con Ctrl tenuto, premere un **altro tasto** mentre lo tieni premuto
+   annulla la dettatura senza trascrivere niente (nessun testo digitato,
+   nessun suono di fine) — è così che le scorciatoie che usano Ctrl
+   (Ctrl+C, Ctrl+V, Ctrl+Z, ecc.) continuano a funzionare normalmente:
+   VoiceFlow non le blocca né le intercetta, si limita ad accorgersi che
+   quella pressione di Ctrl non era una dettatura. Costo onesto di questo
+   comportamento: con i suoni attivi, ogni scorciatoia Ctrl+… fa comunque
+   sentire il suono di **inizio** dettatura (parte prima di sapere se sarà
+   una scorciatoia) e l'icona in tray lampeggia rossa per un istante prima
+   di tornare grigia. E **Ctrl+clic del mouse** avvia comunque una
+   dettatura: nessun tasto la annulla in quel caso, quindi tenendo Ctrl
+   mentre fai clic per aprire un link, ad esempio, VoiceFlow entra in
+   ascolto — rilascia semplicemente Ctrl per chiuderla senza dettare nulla.
+   Se preferisci evitarlo del tutto, passa a Ctrl+Alt+Space dalle
+   Impostazioni.
+
+   Se scegli Ctrl+Alt+Space: il rilascio è rilevato appena una qualsiasi
+   delle tre componenti della combinazione si solleva (non serve
+   rilasciarle tutte insieme) — stesso comportamento del rilascio
+   dell'hotkey sul Mac.
 
 ## Dove vivono i file
 
@@ -198,9 +220,10 @@ disinstallazione.
   Dettare dentro un'app aperta "Esegui come amministratore" (es. Gestione
   attività) non inserisce testo, senza un errore visibile: limite noto della
   piattaforma, non un bug dell'app.
-- **Nessun tasto fn**: a differenza del Mac, Windows non ha un tasto
-  modificatore equivalente a fn/🌐; l'hotkey su questa piattaforma è fissa,
-  **Ctrl+Alt+Space** (nessuna alternativa, nessun rebind libero in v1).
+- **Due opzioni fisse, nessun rebind libero**: come sul Mac (fn/🌐 e
+  Control+Option+Space), v1 offre solo due combinazioni per il
+  push-to-talk — **Ctrl** (default) e **Ctrl+Alt+Space** — selezionabili
+  dalle Impostazioni; non c'è un key-recorder per assegnarne una a piacere.
 - **Antivirus**: alcuni antivirus segnalano o bloccano eseguibili che usano
   `SendInput` per digitare testo sinteticamente, perché la stessa API è usata
   anche da malware. Se il tuo antivirus lo segnala, aggiungi un'eccezione per

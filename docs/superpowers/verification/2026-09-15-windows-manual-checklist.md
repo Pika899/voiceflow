@@ -54,12 +54,8 @@ bugia.
 
 ## C. Dettatura end-to-end
 
-- [ ] Blocco note: clic in un documento, tieni premuto **Ctrl+Alt+Space**,
+- [ ] Blocco note: clic in un documento, tieni premuto **Ctrl** (default),
       parla, rilascia → il testo compare al cursore
-- [ ] Rilasciando **solo** il tasto Space (tenendo Ctrl e Alt premuti) la
-      dettatura termina comunque — il rilascio è rilevato appena una
-      qualsiasi delle tre componenti della combinazione si solleva, non
-      serve rilasciarle tutte insieme
 - [ ] Due dettature di seguito (rilascia, ri-premi, parla) → tra le due c'è
       uno spazio, non "siamo!Adesso"
 - [ ] Dettando subito dopo una virgola, o dopo "l'", non compare uno spazio
@@ -69,11 +65,30 @@ bugia.
       form): il testo compare, **una sola volta**
 - [ ] L'icona nella tray passa: grigia (a riposo) → rossa (in ascolto) →
       blu (in trascrizione) → grigia
+- [ ] **Ctrl+C annulla, non detta**: in Blocco note, seleziona del testo e
+      premi **Ctrl+C** (tenendo Ctrl, premi C) → il testo viene copiato
+      normalmente (verificalo incollandolo altrove con Ctrl+V), **nessuna
+      trascrizione parte** (nessun testo VoiceFlow viene digitato) e
+      l'icona in tray torna grigia — il suono di inizio dettatura può
+      comunque sentirsi (parte prima che VoiceFlow sappia che sarà una
+      scorciatoia), ma non quello di fine
+- [ ] **Cambio tasto dalle Impostazioni, senza rilanciare**: apri
+      Impostazioni, cambia "Push-to-talk" da Ctrl a Ctrl+Alt+Space (o
+      viceversa), chiudi la finestra → senza uscire e riaprire l'app, prova
+      subito a dettare con il **nuovo** tasto scelto → funziona; il tasto
+      precedente non avvia più una dettatura
+- [ ] **AltGr su tastiera italiana**: con Ctrl impostato come push-to-talk,
+      premi **AltGr+ò** (produce `@` su layout italiano) in un campo di
+      testo → compare `@`, **nessuna dettatura parte** (AltGr viene
+      consegnato a Windows come Ctrl sinistro + Alt destro, quindi lo stesso
+      meccanismo di annullamento di Ctrl+C si applica)
 
 ## D. Impostazioni
 
 - [ ] Clic sull'icona in tray → si apre la finestra Impostazioni con
-      Model, Language, Play sounds, Launch at login
+      Model, Language, Play sounds, Launch at login, Push-to-talk (con le
+      due voci "Ctrl (hold)" e "Ctrl+Alt+Space", "Ctrl (hold)" selezionata
+      di default su un'installazione pulita)
 - [ ] Toggle "Play sounds" ON → si sentono due suoni di sistema (uno a
       inizio, uno a fine dettatura); OFF → nessun suono
 - [ ] Cambia modello verso uno non ancora scaricato → la finestra "Model not
@@ -95,11 +110,16 @@ bugia.
 
 ## F. Gestione errori
 
-- [ ] **Conflitto hotkey**: registra Ctrl+Alt+Space in un altro programma
-      (es. AutoHotkey, o le scorciatoie di un'altra app) → rilancia
-      VoiceFlow → compare la finestra **"Hotkey already in use"** con il
-      testo: *"Ctrl+Alt+Space is already registered by another application.
-      Quit that app or free the shortcut there, then relaunch VoiceFlow."*
+- [ ] **Conflitto hotkey**: con il push-to-talk impostato su Ctrl+Alt+Space
+      (cambialo dalle Impostazioni se è ancora sul default Ctrl), registra
+      Ctrl+Alt+Space in un altro programma (es. AutoHotkey, o le scorciatoie
+      di un'altra app) → rilancia VoiceFlow → compare la finestra **"Hotkey
+      already in use"** con il testo: *"Ctrl+Alt+Space is already in use by
+      another application, or couldn't be registered. Pick a different
+      push-to-talk key in Settings, or free the shortcut in the other app,
+      then try again."* Verifica che il nome della combinazione nel testo
+      corrisponda a quella davvero configurata (se il test lo ripeti con
+      Ctrl come default, il testo deve dire "Ctrl", non "Ctrl+Alt+Space").
       Libera la combinazione dopo il test.
 - [ ] **Modello corrotto**: cancella il file del modello (PowerShell:
       `Remove-Item "$env:LOCALAPPDATA\VoiceFlow\models\ggml-base.bin"`) →
@@ -163,8 +183,13 @@ Antivirus in uso: ___  Ha segnalato l'exe? [ ] sì [ ] no — dettagli: ______
 
 ## J. Limiti noti (dichiarati, non da verificare)
 
-- Hotkey fissa **Ctrl+Alt+Space**, nessuna alternativa e nessun rebind
-  libero in v1 (Windows non ha un tasto equivalente a fn/🌐 del Mac).
+- Due opzioni fisse per il push-to-talk, **Ctrl** (default) e
+  **Ctrl+Alt+Space**, nessun rebind libero in v1 (come sul Mac con fn/🌐 e
+  Control+Option+Space).
+- Con Ctrl come push-to-talk, Ctrl+clic del mouse avvia comunque una
+  dettatura (nessun tasto la annulla in quel caso) e ogni scorciatoia
+  Ctrl+… fa comunque sentire il suono di inizio dettatura, anche se annulla
+  senza trascrivere — vedi sezione C.
 - Finestre elevate (amministratore) non ricevono testo: limite della
   piattaforma (UIPI), non dell'app — vedi sezione F.
 - Eseguibile non firmato: SmartScreen interviene a ogni nuova build.
