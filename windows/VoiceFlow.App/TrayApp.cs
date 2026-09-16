@@ -104,7 +104,7 @@ public sealed class TrayApp : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add("Settings…", null, (_, _) => SafeInvoke(ShowSettings));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Quit", null, (_, _) => Quit());
+        menu.Items.Add("Quit", null, (_, _) => SafeInvoke(Quit));
         return menu;
     }
 
@@ -194,15 +194,23 @@ public sealed class TrayApp : ApplicationContext
             return;
         }
 
-        bool wasPresenting = isPresentingDialog;
         isPresentingDialog = true;
         try
         {
-            ErrorDialogs.ShowUnexpected(settingsForm, ex);
+            try
+            {
+                ErrorDialogs.ShowUnexpected(settingsForm, ex);
+            }
+            catch
+            {
+                // This is the last-resort dialog; if showing it throws (e.g.
+                // settingsForm was already disposed during Quit), there is no
+                // further fallback, so swallow rather than take down the process.
+            }
         }
         finally
         {
-            isPresentingDialog = wasPresenting;
+            isPresentingDialog = false;
         }
     }
 

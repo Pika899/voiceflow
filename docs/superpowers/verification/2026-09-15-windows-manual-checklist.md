@@ -43,6 +43,14 @@ bugia.
 - [ ] A download completo la finestra si chiude da sola e l'icona in tray
       torna grigia (a riposo) — significa che il motore Whisper si è
       caricato
+- [ ] **Annulla durante il download**: rilancia il download (es. cambia
+      modello) e clic su **Annulla** nella finestra di progresso → la
+      finestra si chiude subito, nessuna finestra di errore compare, e
+      `%LOCALAPPDATA%\VoiceFlow\models\` non contiene alcun file `.part`
+      (il `CancellationToken` interrompe lo stream HTTP e `ModelManager`
+      cancella il `.part` prima di rilanciare l'eccezione) — al lancio
+      successivo dell'app compare di nuovo la finestra "Model not
+      downloaded"
 
 ## C. Dettatura end-to-end
 
@@ -103,6 +111,31 @@ bugia.
       (tasto destro → "Esegui come amministratore"), prova a dettare in un
       suo campo di testo (se presente) → nessun testo compare, nessun
       errore visibile — limite noto (UIPI), non un bug
+- [ ] **Permesso microfono negato**: Impostazioni → Privacy e sicurezza →
+      Microfono → disattiva l'accesso per le app desktop → premi
+      **Ctrl+Alt+Space** → compare la finestra **"Microphone access
+      needed"** con il testo: *"VoiceFlow needs microphone access to
+      transcribe your speech. Click OK to open Windows Settings > Privacy
+      & security > Microphone, or Cancel."* — clic su **OK** apre la
+      pagina delle Impostazioni Windows. Riattiva l'accesso al microfono
+      al termine del test.
+- [ ] **Nessun microfono disponibile**: disabilita il dispositivo audio in
+      Gestione dispositivi (o scollega un microfono USB) → prova a
+      dettare → compare la finestra **"Couldn't start recording"** con il
+      testo: *"VoiceFlow couldn't open the microphone. Check that one is
+      connected and not in use by another app, then try again."*
+      Riabilita/ricollega il microfono al termine del test.
+- [ ] **Timeout trascrizione**: fai una dettatura abbastanza lunga da far
+      superare i 15 s di trascrizione (dipende dal PC e dal modello usato
+      — prova con il modello medium e una frase lunga) → compare la
+      finestra **"Transcription failed"** con il testo: *"Something went
+      wrong during transcription. Try again."*, e quando il risultato
+      tardivo arriva in background non viene digitato alcun testo. Se il
+      timeout non scatta mai su questo PC, annota "non riproducibile su
+      questo PC" invece di un numero inventato.
+- [ ] **Singola istanza**: con VoiceFlow già in esecuzione, lancia di
+      nuovo `VoiceFlow.App.exe` → non succede nulla (nessuna seconda
+      finestra, nessun errore) e resta una sola icona nella tray.
 
 ## G. Latenza — release-to-text per modello
 
@@ -138,8 +171,6 @@ Antivirus in uso: ___  Ha segnalato l'exe? [ ] sì [ ] no — dettagli: ______
 - Il timeout di 15 s sulla trascrizione cambia solo ciò che l'interfaccia
   mostra: la trascrizione in corso continua in background e il suo
   risultato tardivo viene scartato.
-- "Cancel" sul download del modello chiude la finestra ma il download
-  continua in background fino alla fine.
 
 ## Esito
 
