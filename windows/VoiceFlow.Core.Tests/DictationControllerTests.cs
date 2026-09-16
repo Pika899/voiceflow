@@ -15,6 +15,7 @@ public class DictationControllerTests
         public Settings Settings { get; set; } = new(PlaySounds: true, Language: DictationLanguage.Italian);
         public List<DictationState> States { get; } = [];
         public List<string> Errors { get; } = [];
+        public List<DictationDiagnostic> Diagnostics { get; } = [];
 
         public DictationController Controller { get; }
 
@@ -30,6 +31,7 @@ public class DictationControllerTests
                 () => Transcriber);
             Controller.StateChanged += States.Add;
             Controller.ErrorRaised += Errors.Add;
+            Controller.Diagnostic += Diagnostics.Add;
         }
 
         /// <summary>
@@ -559,5 +561,160 @@ public class DictationControllerTests
         h.Controller.Stop();
 
         Assert.Equal(1, h.Hotkey.UnregisterCallCount);
+    }
+
+    [Fact]
+    public void DiagnosticEventsFireInOrderForAFullRun()
+    {
+        var h = new Harness();
+        h.Audio.SamplesToReturn = [1f, 2f, 3f];
+        var run = h.PressAndRelease();
+
+        h.Complete(run, h.Transcriber!, "Ciao");
+
+        Assert.Equal(
+            ["listening-started", "listening-stopped", "transcribed", "injected"],
+            h.Diagnostics.Select(d => d.Event));
+    }
+
+    [Fact]
+    public void DiagnosticEventsCarryDurationSamplesAndCharacters()
+    {
+        var h = new Harness();
+        h.Audio.SamplesToReturn = [1f, 2f, 3f];
+        var run = h.PressAndRelease();
+
+        h.Complete(run, h.Transcriber!, "Ciao");
+
+        var listeningStopped = h.Diagnostics.Single(d => d.Event == "listening-stopped");
+        Assert.Equal(3, listeningStopped.Samples);
+        Assert.Null(listeningStopped.Duration);
+        Assert.Null(listeningStopped.Characters);
+
+        var transcribed = h.Diagnostics.Single(d => d.Event == "transcribed");
+        Assert.Equal(TimeSpan.Zero, transcribed.Duration); // FakeTranscriber always reports TimeSpan.Zero
+        Assert.Equal(4, transcribed.Characters); // "Ciao".Length
+
+        var injected = h.Diagnostics.Single(d => d.Event == "injected");
+        Assert.Equal(4, injected.Characters);
+    }
+
+    [Fact]
+    public void DiagnosticTranscribedEventCarriesZeroCharactersForEmptyResultAndNoInjectedEventFollows()
+    {
+        var h = new Harness();
+        var run = h.PressAndRelease();
+
+        h.Complete(run, h.Transcriber!, "");
+
+        var transcribed = h.Diagnostics.Single(d => d.Event == "transcribed");
+        Assert.Equal(0, transcribed.Characters);
+        Assert.DoesNotContain(h.Diagnostics, d => d.Event == "injected");
+    }
+
+    [Fact]
+    public void DiagnosticCancelledEventFiresOnCancel()
+    {
+        var h = new Harness();
+        h.Hotkey.RaisePressed();
+
+        h.Hotkey.RaiseCancelled();
+
+        Assert.Equal(["listening-started", "cancelled"], h.Diagnostics.Select(d => d.Event));
+    }
+
+    [Fact]
+    public void DiagnosticTimeoutEventFiresOnTimeout()
+    {
+        var h = new Harness();
+        h.PressAndRelease();
+
+        h.Scheduler.FireTimeout();
+
+        Assert.Contains(h.Diagnostics, d => d.Event == "timeout");
+    }
+
+    [Fact]
+    public void DiagnosticLateResultDroppedFiresForLateSuccessAfterTimeout()
+    {
+        var h = new Harness();
+        var run = h.PressAndRelease();
+        h.Scheduler.FireTimeout();
+
+        h.Complete(run, h.Transcriber!, "Ciao");
+
+        Assert.Contains(h.Diagnostics, d => d.Event == "late-result-dropped");
+        Assert.DoesNotContain(h.Diagnostics, d => d.Event == "transcribed");
+    }
+
+    [Fact]
+    public void DiagnosticLateResultDroppedFiresForLateFailureAfterTimeout()
+    {
+        var h = new Harness();
+        var run = h.PressAndRelease();
+        h.Scheduler.FireTimeout();
+
+        h.Fail(run, h.Transcriber!, new InvalidOperationException("late boom"));
+
+        Assert.Contains(h.Diagnostics, d => d.Event == "late-result-dropped");
+    }
+
+    [Fact]
+    public void LastErrorExceptionIsTheThrownExceptionAfterTranscriptionFailure()
+    {
+        var h = new Harness();
+        var run = h.PressAndRelease();
+        var ex = new InvalidOperationException("boom");
+
+        h.Fail(run, h.Transcriber!, ex);
+
+        Assert.Same(ex, h.Controller.LastErrorException);
+    }
+
+    [Fact]
+    public void LastErrorExceptionIsNullAfterATimeout()
+    {
+        var h = new Harness();
+        h.PressAndRelease();
+
+        h.Scheduler.FireTimeout();
+
+        Assert.Equal("transcription-timeout", h.Controller.LastErrorCode);
+        Assert.Null(h.Controller.LastErrorException);
+    }
+
+    [Fact]
+    public void LastErrorExceptionIsSetForAudioCaptureException()
+    {
+        var h = new Harness();
+        var ex = new AudioCaptureException("microphone-permission", "no mic access");
+        h.Audio.ThrowOnStart = ex;
+
+        h.Hotkey.RaisePressed();
+
+        Assert.Same(ex, h.Controller.LastErrorException);
+    }
+
+    [Fact]
+    public void LastErrorExceptionIsSetForUnexpectedAudioStartException()
+    {
+        var h = new Harness();
+        var ex = new InvalidOperationException("device busy");
+        h.Audio.ThrowOnStart = ex;
+
+        h.Hotkey.RaisePressed();
+
+        Assert.Same(ex, h.Controller.LastErrorException);
+    }
+
+    [Fact]
+    public void LastErrorExceptionIsNullForErrorsRaisedWithoutAnException()
+    {
+        var h = new Harness { Transcriber = null };
+
+        h.Hotkey.RaisePressed();
+
+        Assert.Equal("model-missing", h.Controller.LastErrorCode);
+        Assert.Null(h.Controller.LastErrorException);
     }
 }

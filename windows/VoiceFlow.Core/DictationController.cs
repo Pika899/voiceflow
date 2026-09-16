@@ -9,6 +9,13 @@ public enum DictationState
 }
 
 /// <summary>
+/// A single step of a dictation's lifecycle, for local diagnostics only.
+/// Never carries the dictated text or the audio — <see cref="Characters"/>
+/// and <see cref="Samples"/> are counts, not content.
+/// </summary>
+public sealed record DictationDiagnostic(string Event, TimeSpan? Duration = null, int? Samples = null, int? Characters = null);
+
+/// <summary>
 /// Push-to-talk state machine: press -&gt; capture audio -&gt; release -&gt;
 /// transcribe -&gt; inject. Written against injected ports (<see cref="IAudioCapture"/>,
 /// <see cref="IHotkey"/>, <see cref="ITextInjector"/>, <see cref="ISoundPlayer"/>,
@@ -81,10 +88,20 @@ public sealed class DictationController
 
     public string? LastErrorCode { get; private set; }
 
+    /// <summary>The exception behind <see cref="LastErrorCode"/>, when one was in hand; null for errors that aren't backed by a caught exception (e.g. "model-missing", "transcription-timeout").</summary>
+    public Exception? LastErrorException { get; private set; }
+
     public event Action<DictationState>? StateChanged;
 
     /// <summary>Fires once per transition into <see cref="DictationState.Error"/>, with the error code.</summary>
     public event Action<string>? ErrorRaised;
+
+    /// <summary>
+    /// Fires for local diagnostics (never the dictated text or audio) at each
+    /// step of a dictation's lifecycle, from the same thread/context as
+    /// <see cref="StateChanged"/>/<see cref="ErrorRaised"/>.
+    /// </summary>
+    public event Action<DictationDiagnostic>? Diagnostic;
 
     // The Mac uses 15 s. On the first Windows PC tested (Intel i7-3770, no
     // AVX2, NoAvx runtime) the base model took 21 s to load and transcribe one
@@ -132,15 +149,16 @@ public sealed class DictationController
             }
 
             audio.Start();
+            Diagnostic?.Invoke(new DictationDiagnostic("listening-started"));
             SetState(DictationState.Listening);
         }
         catch (AudioCaptureException ex)
         {
-            SetError(ex.Code);
+            SetError(ex.Code, ex);
         }
-        catch
+        catch (Exception ex)
         {
-            SetError("audio-start-failed");
+            SetError("audio-start-failed", ex);
         }
     }
 
@@ -152,6 +170,7 @@ public sealed class DictationController
         }
 
         var samples = audio.Stop();
+        Diagnostic?.Invoke(new DictationDiagnostic("listening-stopped", Samples: samples.Length));
         if (settings().PlaySounds)
         {
             sounds.PlayStop();
@@ -198,6 +217,7 @@ public sealed class DictationController
         }
 
         audio.Stop(); // discard the samples; no PlayStop, no transcription
+        Diagnostic?.Invoke(new DictationDiagnostic("cancelled"));
         SetState(DictationState.Idle);
     }
 
@@ -209,6 +229,7 @@ public sealed class DictationController
         }
 
         timedOutRunId = forRun;
+        Diagnostic?.Invoke(new DictationDiagnostic("timeout"));
         SetError("transcription-timeout");
     }
 
@@ -234,10 +255,13 @@ public sealed class DictationController
     {
         if (!IsCurrentRun(forRun))
         {
+            Diagnostic?.Invoke(new DictationDiagnostic("late-result-dropped"));
             return; // the UI already reported a timeout for this run; drop the late result
         }
 
         CancelTimeout();
+
+        Diagnostic?.Invoke(new DictationDiagnostic("transcribed", Duration: result.Duration, Characters: result.Text.Length));
 
         if (string.IsNullOrEmpty(result.Text))
         {
@@ -256,6 +280,7 @@ public sealed class DictationController
             return;
         }
 
+        Diagnostic?.Invoke(new DictationDiagnostic("injected", Characters: joined.Length));
         lastInjectedCharacter = joined[^1];
         SetState(DictationState.Idle);
     }
@@ -264,11 +289,12 @@ public sealed class DictationController
     {
         if (!IsCurrentRun(forRun))
         {
+            Diagnostic?.Invoke(new DictationDiagnostic("late-result-dropped"));
             return;
         }
 
         CancelTimeout();
-        SetError("transcription-failed");
+        SetError("transcription-failed", exception);
     }
 
     private bool IsCurrentRun(int forRun) => forRun == runId && timedOutRunId != forRun;
@@ -285,9 +311,10 @@ public sealed class DictationController
         StateChanged?.Invoke(State);
     }
 
-    private void SetError(string code)
+    private void SetError(string code, Exception? exception = null)
     {
         LastErrorCode = code;
+        LastErrorException = exception;
         State = DictationState.Error;
         StateChanged?.Invoke(State);
         ErrorRaised?.Invoke(code);
