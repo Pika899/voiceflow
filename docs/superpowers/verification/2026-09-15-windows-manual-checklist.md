@@ -172,6 +172,29 @@ Antivirus in uso: ___  Ha segnalato l'exe? [ ] sì [ ] no — dettagli: ______
   mostra: la trascrizione in corso continua in background e il suo
   risultato tardivo viene scartato.
 
+## K. Disinstallazione
+
+- [ ] Con VoiceFlow in esecuzione, lancia `.\windows\scripts\uninstall.ps1`,
+      conferma con `s` → il processo `VoiceFlow.App` sparisce da Gestione
+      attività
+- [ ] Dopo lo script, la voce di avvio automatico non c'è più: controlla in
+      **Gestione attività → App di avvio** (Task Manager → Startup apps),
+      oppure da PowerShell:
+      `Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"`
+      non deve più elencare `VoiceFlow`
+- [ ] `%APPDATA%\VoiceFlow` e `%LOCALAPPDATA%\VoiceFlow` non esistono più
+- [ ] Rilancia `.\windows\scripts\uninstall.ps1` una seconda volta → per
+      ogni passo riporta che non c'è niente da fare (nessun processo,
+      nessuna voce di registro, nessuna cartella)
+- [ ] Ripeti con `-KeepModels` (dopo aver rifatto un download di prova) →
+      `%LOCALAPPDATA%\VoiceFlow\models\` resta al suo posto, il resto viene
+      comunque rimosso
+- [ ] Chiudi la finestra di PowerShell e cancella a mano la cartella
+      indicata dallo script (`windows\publish\`, o l'intero clone se
+      lanciato con `run.ps1`) → la disinstallazione è completa
+- [ ] Rilanciando `run.ps1` dopo la cancellazione, l'app si comporta come al
+      primo avvio: compare di nuovo la finestra "Model not downloaded"
+
 ## Esito
 
 Data: ________  Compilato da: ________  Versione Windows (`winver`): ________

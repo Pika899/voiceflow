@@ -148,6 +148,48 @@ volta scaricato e verificato, la dettatura è interamente locale: audio e
 testo non lasciano il PC. Per verificarlo: disattiva il Wi-Fi dopo che il
 modello è già presente e prova a dettare — deve funzionare identico.
 
+## Disinstallazione
+
+VoiceFlow non ha un installer: gira semplicemente dalla cartella `publish`
+(o da un clone del repository tramite `run.ps1`). Disinstallarlo vuol dire
+rimuovere le tracce che lascia sul PC, che sono tre:
+
+1. **Avvio automatico** — una voce nel registro (solo se avevi attivato
+   "Launch at login" nelle Impostazioni).
+2. **Impostazioni** — `%APPDATA%\VoiceFlow\settings.json`, un file piccolo.
+3. **Modelli Whisper scaricati** — `%LOCALAPPDATA%\VoiceFlow\models\`. Sono
+   la parte grande: se ne hai scaricati più di uno (Base, Small, Medium)
+   possono occupare diverso spazio su disco.
+
+Lo script `windows\scripts\uninstall.ps1` automatizza i primi due punti e,
+per default, anche il terzo:
+
+```powershell
+.\windows\scripts\uninstall.ps1
+```
+
+Chiede conferma prima di procedere (`Continuare? [s/N]`, rispondi `s` per
+proseguire). Opzioni:
+
+```powershell
+# Non cancellare i modelli scaricati (utile se pensi di reinstallare)
+.\windows\scripts\uninstall.ps1 -KeepModels
+
+# Salta la conferma (per uso non presidiato/scriptato)
+.\windows\scripts\uninstall.ps1 -Force
+```
+
+Lo script arresta il processo `VoiceFlow.App` se è in esecuzione, rimuove la
+voce di avvio automatico, e cancella le cartelle di impostazioni e modelli
+secondo le opzioni scelte.
+
+**Ultimo passaggio, a mano**: lo script vive dentro la cartella dell'app
+(`windows\publish\`, o l'intero clone del repository se hai usato
+`run.ps1`) e non può cancellare la cartella in cui si trova mentre è ancora
+in esecuzione. Alla fine stampa il percorso esatto: chiudi la finestra di
+PowerShell e cancella quella cartella a mano per completare la
+disinstallazione.
+
 ## Limiti noti
 
 - **Finestre elevate (amministratore)**: `SendInput` non può scrivere in una
