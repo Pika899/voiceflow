@@ -480,6 +480,53 @@ public class DictationControllerTests
     }
 
     [Fact]
+    public void CancelWhileListeningStopsAudioDiscardsSamplesAndGoesIdleWithoutTranscribingOrInjecting()
+    {
+        var h = new Harness();
+        h.Audio.SamplesToReturn = [1f, 2f, 3f];
+        h.Hotkey.RaisePressed();
+        Assert.Equal(1, h.Sounds.StartCount);
+
+        h.Hotkey.RaiseCancelled();
+
+        Assert.Equal(DictationState.Idle, h.Controller.State);
+        Assert.Equal(1, h.Audio.StopCallCount);
+        Assert.False(h.Audio.IsStarted);
+        Assert.Equal(0, h.Transcriber!.CallCount);
+        Assert.Empty(h.Injector.Injected);
+        // No stop cue: the start cue already played, and a stop cue on every
+        // cancelled shortcut (Ctrl+C, Ctrl+V, ...) would double the noise.
+        Assert.Equal(0, h.Sounds.StopCount);
+        Assert.Null(h.Scheduler.LastRunTask); // no transcription was ever scheduled
+    }
+
+    [Fact]
+    public void CancelWhileIdleIsANoOp()
+    {
+        var h = new Harness();
+
+        h.Hotkey.RaiseCancelled();
+
+        Assert.Equal(DictationState.Idle, h.Controller.State);
+        Assert.Equal(0, h.Audio.StopCallCount);
+        Assert.Empty(h.States);
+    }
+
+    [Fact]
+    public void CancelWhileTranscribingIsANoOp()
+    {
+        var h = new Harness();
+        h.PressAndRelease();
+        Assert.Equal(DictationState.Transcribing, h.Controller.State);
+        var stopCallsBeforeCancel = h.Audio.StopCallCount;
+
+        h.Hotkey.RaiseCancelled();
+
+        Assert.Equal(DictationState.Transcribing, h.Controller.State);
+        Assert.Equal(stopCallsBeforeCancel, h.Audio.StopCallCount);
+    }
+
+    [Fact]
     public void StartRegistersTheHotkey()
     {
         var h = new Harness();

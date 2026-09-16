@@ -26,6 +26,7 @@ public class SettingsStoreTests
             Assert.Equal(DictationLanguage.Italian, settings.Language);
             Assert.True(settings.PlaySounds);
             Assert.False(settings.LaunchAtLogin);
+            Assert.Equal(PushToTalkKey.Ctrl, settings.PushToTalkKey);
         }
         finally
         {
@@ -45,12 +46,91 @@ public class SettingsStoreTests
                 Model: WhisperModelName.Medium,
                 Language: DictationLanguage.English,
                 PlaySounds: false,
-                LaunchAtLogin: true);
+                LaunchAtLogin: true,
+                PushToTalkKey: PushToTalkKey.CtrlAltSpace);
 
             store.Save(settings);
             var loaded = store.Load();
 
             Assert.Equal(settings, loaded);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(PushToTalkKey.Ctrl)]
+    [InlineData(PushToTalkKey.CtrlAltSpace)]
+    public void SaveThenLoadRoundTripsEachPushToTalkKey(PushToTalkKey key)
+    {
+        var dir = CreateTempDirectory();
+        try
+        {
+            var filePath = Path.Combine(dir, "settings.json");
+            var store = new SettingsStore(filePath);
+            var settings = new Settings(PushToTalkKey: key);
+
+            store.Save(settings);
+            var loaded = store.Load();
+
+            Assert.Equal(key, loaded.PushToTalkKey);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadDefaultsPushToTalkKeyToCtrlWhenFileHasNoSuchProperty()
+    {
+        // A settings.json written before this feature existed has no
+        // "pushToTalkKey" property at all; loading it must not throw and
+        // must fall back to the default (Ctrl), not merely the enum's
+        // underlying zero value coincidentally matching it.
+        var dir = CreateTempDirectory();
+        try
+        {
+            var filePath = Path.Combine(dir, "settings.json");
+            File.WriteAllText(filePath, """
+                {
+                  "model": "base",
+                  "language": "italian",
+                  "playSounds": true,
+                  "launchAtLogin": false
+                }
+                """);
+            var store = new SettingsStore(filePath);
+
+            var settings = store.Load();
+
+            Assert.Equal(PushToTalkKey.Ctrl, settings.PushToTalkKey);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadFallsBackToDefaultsWhenPushToTalkKeyIsAnUnknownString()
+    {
+        // Documents existing SettingsStore behaviour (shared with every other
+        // enum field here): JsonStringEnumConverter throws JsonException on
+        // an unrecognized member, and Load()'s catch-all turns that into a
+        // full defaults fallback for the whole file, not just that field.
+        var dir = CreateTempDirectory();
+        try
+        {
+            var filePath = Path.Combine(dir, "settings.json");
+            File.WriteAllText(filePath, """{ "pushToTalkKey": "shift" }""");
+            var store = new SettingsStore(filePath);
+
+            var settings = store.Load();
+
+            Assert.Equal(new Settings(), settings);
         }
         finally
         {

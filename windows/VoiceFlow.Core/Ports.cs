@@ -21,6 +21,16 @@ public interface IHotkey
     event Action? Pressed;
     event Action? Released;
 
+    /// <summary>
+    /// The press that started the current dictation turned out to be a
+    /// keyboard shortcut, not a dictation (e.g. Ctrl+C while the Ctrl backend
+    /// is active) — the controller must abandon the capture without
+    /// transcribing. A backend that can never distinguish a shortcut from a
+    /// plain press (e.g. a fixed chord like Ctrl+Alt+Space) simply never
+    /// fires this.
+    /// </summary>
+    event Action? Cancelled;
+
     bool Register();
     void Unregister();
 }

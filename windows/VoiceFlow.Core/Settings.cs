@@ -13,6 +13,18 @@ public enum DictationLanguage
     English,
 }
 
+/// <summary>
+/// The two fixed push-to-talk options (mirrors the Mac's fn/Control+Option+Space
+/// pair — no free rebind in v1). <see cref="Ctrl"/> is a bare modifier and is
+/// delivered through a low-level keyboard hook rather than RegisterHotKey; see
+/// VoiceFlow.App.CtrlKeyMonitor.
+/// </summary>
+public enum PushToTalkKey
+{
+    Ctrl,
+    CtrlAltSpace,
+}
+
 public static class DictationLanguageExtensions
 {
     public static string WhisperCode(this DictationLanguage language) => language switch
@@ -27,4 +39,5 @@ public sealed record Settings(
     WhisperModelName Model = WhisperModelName.Base,
     DictationLanguage Language = DictationLanguage.Italian,
     bool PlaySounds = true,
-    bool LaunchAtLogin = false);
+    bool LaunchAtLogin = false,
+    PushToTalkKey PushToTalkKey = PushToTalkKey.Ctrl);

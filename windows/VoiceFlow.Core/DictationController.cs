@@ -74,6 +74,7 @@ public sealed class DictationController
 
         hotkey.Pressed += OnPressed;
         hotkey.Released += OnReleased;
+        hotkey.Cancelled += OnCancelled;
     }
 
     public DictationState State { get; private set; } = DictationState.Idle;
@@ -174,6 +175,26 @@ public sealed class DictationController
         timeoutHandle = scheduler.Schedule(TranscriptionTimeout, () => OnTimeout(thisRun));
 
         _ = scheduler.RunAsync(() => RunTranscriptionAsync(thisRun, currentTranscriber, samples));
+    }
+
+    /// <summary>
+    /// The press that started the current capture turned out to be a
+    /// keyboard shortcut (e.g. Ctrl+C while the bare-Ctrl backend is active),
+    /// not a dictation: abandon the capture with no transcription, no
+    /// injection and no stop cue (the start cue already played; a stop cue on
+    /// every cancelled shortcut would double the noise). A no-op outside
+    /// Listening — there is nothing to abandon while Idle, and a capture
+    /// already handed off to Transcribing has no audio left to discard.
+    /// </summary>
+    private void OnCancelled()
+    {
+        if (State != DictationState.Listening)
+        {
+            return;
+        }
+
+        audio.Stop(); // discard the samples; no PlayStop, no transcription
+        SetState(DictationState.Idle);
     }
 
     private void OnTimeout(int forRun)

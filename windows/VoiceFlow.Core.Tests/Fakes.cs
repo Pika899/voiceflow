@@ -33,6 +33,7 @@ public sealed class FakeHotkey : IHotkey
 {
     public event Action? Pressed;
     public event Action? Released;
+    public event Action? Cancelled;
 
     public bool RegisterResult { get; set; } = true;
     public bool IsRegistered { get; private set; }
@@ -53,6 +54,8 @@ public sealed class FakeHotkey : IHotkey
     public void RaisePressed() => Pressed?.Invoke();
 
     public void RaiseReleased() => Released?.Invoke();
+
+    public void RaiseCancelled() => Cancelled?.Invoke();
 }
 
 public sealed class FakeTextInjector : ITextInjector
