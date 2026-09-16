@@ -86,7 +86,11 @@ public sealed class DictationController
     /// <summary>Fires once per transition into <see cref="DictationState.Error"/>, with the error code.</summary>
     public event Action<string>? ErrorRaised;
 
-    public static readonly TimeSpan TranscriptionTimeout = TimeSpan.FromSeconds(15);
+    // The Mac uses 15 s. On the first Windows PC tested (Intel i7-3770, no
+    // AVX2, NoAvx runtime) the base model took 21 s to load and transcribe one
+    // second of silence, so 15 s would time out every dictation. 60 s is a
+    // design choice with headroom above that observation, not a measurement.
+    public static readonly TimeSpan TranscriptionTimeout = TimeSpan.FromSeconds(60);
 
     public bool Start()
     {
@@ -170,7 +174,7 @@ public sealed class DictationController
         var thisRun = ++runId;
         // Honest limitation (mirrors the Mac): the transcription itself is not
         // cancelled when the timeout fires. This only changes what the state
-        // machine reports after 15s; the in-flight work keeps running and its
+        // machine reports after the timeout; the in-flight work keeps running and its
         // late result is dropped below rather than injected.
         timeoutHandle = scheduler.Schedule(TranscriptionTimeout, () => OnTimeout(thisRun));
 

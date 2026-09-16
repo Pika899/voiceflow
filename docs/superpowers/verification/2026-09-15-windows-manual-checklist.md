@@ -146,7 +146,7 @@ bugia.
       connected and not in use by another app, then try again."*
       Riabilita/ricollega il microfono al termine del test.
 - [ ] **Timeout trascrizione**: fai una dettatura abbastanza lunga da far
-      superare i 15 s di trascrizione (dipende dal PC e dal modello usato
+      superare i 60 s di trascrizione (dipende dal PC e dal modello usato
       — prova con il modello medium e una frase lunga) → compare la
       finestra **"Transcription failed"** con il testo: *"Something went
       wrong during transcription. Try again."*, e quando il risultato
@@ -193,7 +193,8 @@ Antivirus in uso: ___  Ha segnalato l'exe? [ ] sì [ ] no — dettagli: ______
 - Finestre elevate (amministratore) non ricevono testo: limite della
   piattaforma (UIPI), non dell'app — vedi sezione F.
 - Eseguibile non firmato: SmartScreen interviene a ogni nuova build.
-- Il timeout di 15 s sulla trascrizione cambia solo ciò che l'interfaccia
+- Il timeout di 60 s sulla trascrizione (15 s sul Mac; alzato dopo la misura
+  di 21 s per caricamento + 1 s di silenzio su un i7-3770 senza AVX2) cambia solo ciò che l'interfaccia
   mostra: la trascrizione in corso continua in background e il suo
   risultato tardivo viene scartato.
 
