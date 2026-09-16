@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using VoiceFlow.Core;
 
@@ -56,12 +57,22 @@ public sealed class ModelLifecycle : IDisposable
 
         try
         {
-            var newEngine = new WhisperEngine(modelManager.LocalPath(model));
+            var localPath = modelManager.LocalPath(model);
+            var stopwatch = Stopwatch.StartNew();
+            var newEngine = new WhisperEngine(localPath);
+            stopwatch.Stop();
+
             Engine?.Dispose();
             Engine = newEngine;
+            DiagnosticLog.Write($"model-loaded {localPath} duration={stopwatch.ElapsedMilliseconds}ms");
         }
-        catch (WhisperEngineException)
+        catch (WhisperEngineException ex)
         {
+            // Logged directly here (in addition to TrayApp.HandleErrorCore's
+            // own DiagnosticLog.Error call for every error code) because this
+            // exception never reaches DictationController.LastErrorException
+            // — it is caught before the controller is even involved.
+            DiagnosticLog.Error("model-load-failed", ex);
             onError("model-load-failed");
         }
     }

@@ -107,6 +107,9 @@ bugia.
 - [ ] Con il modello già scaricato, disattiva completamente il Wi-Fi → la
       dettatura funziona identica
 - [ ] Riattiva il Wi-Fi
+- [ ] Dopo una dettatura, apri `%LOCALAPPDATA%\VoiceFlow\voiceflow.log` e
+      verifica che NON contenga le parole dette (solo codici, durate e
+      conteggi)
 
 ## F. Gestione errori
 

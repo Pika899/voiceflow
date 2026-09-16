@@ -170,6 +170,26 @@ volta scaricato e verificato, la dettatura è interamente locale: audio e
 testo non lasciano il PC. Per verificarlo: disattiva il Wi-Fi dopo che il
 modello è già presente e prova a dettare — deve funzionare identico.
 
+## Log diagnostico
+
+VoiceFlow tiene un log locale, solo testo, in
+`%LOCALAPPDATA%\VoiceFlow\voiceflow.log`. Contiene:
+
+- i codici di errore, con la catena completa dell'eccezione (messaggio e
+  stack trace) quando ce n'è una in mano;
+- un evento per ogni fase di una dettatura (avvio ascolto, fine ascolto,
+  trascrizione, iniezione, annullamento, timeout, risultato tardivo
+  scartato), con durate e conteggi — non contenuto;
+- la durata di caricamento del modello Whisper a ogni avvio dell'app.
+
+**Non contiene mai** il testo dettato, l'audio catturato o il risultato
+della trascrizione: solo lunghezze e durate. Resta sempre e solo sul PC.
+
+Il file è limitato a 1 MB: superata la soglia viene cancellato e ricreato da
+zero, invece di crescere indefinitamente. Viene rimosso da
+`uninstall.ps1` insieme al resto di `%LOCALAPPDATA%\VoiceFlow` (a meno di
+`-KeepModels`, che lascia l'intera cartella — modelli e log — al suo posto).
+
 ## Disinstallazione
 
 VoiceFlow non ha un installer: gira semplicemente dalla cartella `publish`
@@ -250,3 +270,5 @@ Se qualcosa non funziona, includi nella segnalazione:
   entrambi se possibile).
 - App di destinazione in cui stavi dettando (es. Blocco note, VS Code,
   Chrome) e se girava con privilegi di amministratore.
+- Le ultime righe di `%LOCALAPPDATA%\VoiceFlow\voiceflow.log` (vedi "Log
+  diagnostico" sopra — non contiene mai il testo dettato).

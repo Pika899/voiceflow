@@ -54,6 +54,11 @@ public sealed class TrayApp : ApplicationContext
         settingsStore = new SettingsStore(WindowsPaths.SettingsFile);
         settings = settingsStore.Load();
 
+        DiagnosticLog.Write(
+            $"startup {VoiceFlowCore.Version} model={ModelCatalogue.For(settings.Model).Name} " +
+            $"pushToTalkKey={settings.PushToTalkKey} language={settings.Language.WhisperCode()} " +
+            $"cpu={Environment.ProcessorCount} threads");
+
         var scheduler = new ThreadScheduler();
 
         var audioCapture = new WasapiAudioCapture();
@@ -80,6 +85,7 @@ public sealed class TrayApp : ApplicationContext
             () => modelLifecycle.Engine);
         controller.StateChanged += OnStateChanged;
         controller.ErrorRaised += HandleError;
+        controller.Diagnostic += LogDiagnostic;
 
         notifyIcon = new NotifyIcon
         {
@@ -159,6 +165,34 @@ public sealed class TrayApp : ApplicationContext
     private void UpdateIcon(DictationState state) => notifyIcon.Icon = TrayIcons.For(state);
 
     /// <summary>
+    /// Turns one <see cref="DictationController.Diagnostic"/> event into a
+    /// single log line, e.g. <c>event transcribed duration=812ms chars=42</c>
+    /// — only the fields the event actually carries are included, and never
+    /// the dictated text itself (only its length).
+    /// </summary>
+    private static void LogDiagnostic(DictationDiagnostic diagnostic)
+    {
+        var parts = new List<string> { $"event {diagnostic.Event}" };
+
+        if (diagnostic.Duration is { } duration)
+        {
+            parts.Add($"duration={duration.TotalMilliseconds:0}ms");
+        }
+
+        if (diagnostic.Samples is { } samples)
+        {
+            parts.Add($"samples={samples} ({samples / 16000.0:0.0}s)");
+        }
+
+        if (diagnostic.Characters is { } characters)
+        {
+            parts.Add($"chars={characters}");
+        }
+
+        DiagnosticLog.Write(string.Join(' ', parts));
+    }
+
+    /// <summary>
     /// Handles every error the app can raise, whether from the dictation
     /// state machine (<see cref="DictationController.ErrorRaised"/>) or from
     /// the model lifecycle (missing/unloadable/undownloadable model). The
@@ -169,6 +203,7 @@ public sealed class TrayApp : ApplicationContext
 
     private void HandleErrorCore(string code)
     {
+        DiagnosticLog.Error(code, controller.LastErrorException);
         UpdateIcon(DictationState.Error);
 
         if (isPresentingDialog)

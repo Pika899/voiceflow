@@ -8,4 +8,7 @@ public static class WindowsPaths
 
     public static string ModelsDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VoiceFlow", "models");
+
+    public static string LogFile =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VoiceFlow", "voiceflow.log");
 }
