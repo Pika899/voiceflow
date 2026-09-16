@@ -28,10 +28,17 @@ public sealed class SettingsForm : Form
         ("English", DictationLanguage.English),
     ];
 
+    private static readonly (string Label, PushToTalkKey Value)[] PushToTalkOptions =
+    [
+        ("Ctrl (hold)", PushToTalkKey.Ctrl),
+        ("Ctrl+Alt+Space", PushToTalkKey.CtrlAltSpace),
+    ];
+
     private readonly SettingsStore settingsStore;
     private readonly Func<Settings> getSettings;
     private readonly Action<Settings> setSettings;
     private readonly Action onModelChanged;
+    private readonly Action onPushToTalkKeyChanged;
     private readonly Action onQuit;
 
     private readonly ComboBox modelCombo;
@@ -39,6 +46,7 @@ public sealed class SettingsForm : Form
     private readonly CheckBox playSoundsCheck;
     private readonly CheckBox launchAtLoginCheck;
     private readonly Label launchAtLoginErrorLabel;
+    private readonly ComboBox pushToTalkCombo;
 
     // Guards every field's changed-event handler while the constructor is
     // populating initial values, and separately guards the launch-at-login
@@ -49,12 +57,13 @@ public sealed class SettingsForm : Form
     private bool isLoading = true;
     private bool isRevertingLaunchAtLogin;
 
-    public SettingsForm(SettingsStore settingsStore, Func<Settings> getSettings, Action<Settings> setSettings, Action onModelChanged, Action onQuit)
+    public SettingsForm(SettingsStore settingsStore, Func<Settings> getSettings, Action<Settings> setSettings, Action onModelChanged, Action onPushToTalkKeyChanged, Action onQuit)
     {
         this.settingsStore = settingsStore;
         this.getSettings = getSettings;
         this.setSettings = setSettings;
         this.onModelChanged = onModelChanged;
+        this.onPushToTalkKeyChanged = onPushToTalkKeyChanged;
         this.onQuit = onQuit;
 
         Text = "VoiceFlow Settings";
@@ -95,13 +104,14 @@ public sealed class SettingsForm : Form
             Visible = false,
         };
 
-        var noteLabel = new Label
+        var pushToTalkLabel = new Label { Text = "Push-to-talk:", Location = new Point(12, 179), Size = new Size(100, 20) };
+        pushToTalkCombo = new ComboBox
         {
-            Text = "Push-to-talk: hold Ctrl+Alt+Space",
-            Location = new Point(12, 176),
-            Size = new Size(296, 20),
-            ForeColor = SystemColors.GrayText,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(110, 176),
+            Size = new Size(198, 23),
         };
+        pushToTalkCombo.Items.AddRange(PushToTalkOptions.Select(o => o.Label).ToArray());
 
         var quitButton = new Button
         {
@@ -118,7 +128,8 @@ public sealed class SettingsForm : Form
         Controls.Add(playSoundsCheck);
         Controls.Add(launchAtLoginCheck);
         Controls.Add(launchAtLoginErrorLabel);
-        Controls.Add(noteLabel);
+        Controls.Add(pushToTalkLabel);
+        Controls.Add(pushToTalkCombo);
         Controls.Add(quitButton);
 
         var current = getSettings();
@@ -126,12 +137,14 @@ public sealed class SettingsForm : Form
         languageCombo.SelectedIndex = Array.FindIndex(LanguageOptions, o => o.Value == current.Language);
         playSoundsCheck.Checked = current.PlaySounds;
         launchAtLoginCheck.Checked = current.LaunchAtLogin;
+        pushToTalkCombo.SelectedIndex = Array.FindIndex(PushToTalkOptions, o => o.Value == current.PushToTalkKey);
         isLoading = false;
 
         modelCombo.SelectedIndexChanged += OnModelChanged;
         languageCombo.SelectedIndexChanged += OnLanguageChanged;
         playSoundsCheck.CheckedChanged += OnPlaySoundsChanged;
         launchAtLoginCheck.CheckedChanged += OnLaunchAtLoginChanged;
+        pushToTalkCombo.SelectedIndexChanged += OnPushToTalkKeyChanged;
     }
 
     private void OnModelChanged(object? sender, EventArgs e)
@@ -153,6 +166,17 @@ public sealed class SettingsForm : Form
         }
 
         Save(s => s with { Language = LanguageOptions[languageCombo.SelectedIndex].Value });
+    }
+
+    private void OnPushToTalkKeyChanged(object? sender, EventArgs e)
+    {
+        if (isLoading)
+        {
+            return;
+        }
+
+        Save(s => s with { PushToTalkKey = PushToTalkOptions[pushToTalkCombo.SelectedIndex].Value });
+        onPushToTalkKeyChanged();
     }
 
     private void OnPlaySoundsChanged(object? sender, EventArgs e)

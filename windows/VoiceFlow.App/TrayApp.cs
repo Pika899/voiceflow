@@ -18,7 +18,7 @@ public sealed class TrayApp : ApplicationContext
 {
     private readonly SettingsStore settingsStore;
     private readonly ModelLifecycle modelLifecycle;
-    private readonly GlobalHotkey hotkey;
+    private readonly PushToTalkBackend hotkey;
     private readonly DictationController controller;
     private readonly NotifyIcon notifyIcon;
 
@@ -57,7 +57,7 @@ public sealed class TrayApp : ApplicationContext
         var scheduler = new ThreadScheduler();
 
         var audioCapture = new WasapiAudioCapture();
-        hotkey = new GlobalHotkey();
+        hotkey = new PushToTalkBackend(() => settings.PushToTalkKey);
         var textInjector = new SendInputTextInjector();
         var soundPlayer = new SystemSoundPlayer();
 
@@ -126,6 +126,7 @@ public sealed class TrayApp : ApplicationContext
             getSettings: () => settings,
             setSettings: updated => settings = updated,
             onModelChanged: () => SafeInvoke(() => modelLifecycle.LoadModelIfPresent()),
+            onPushToTalkKeyChanged: () => SafeInvoke(SwitchPushToTalkKey),
             onQuit: Quit);
 
         if (!settingsForm.Visible)
@@ -135,6 +136,22 @@ public sealed class TrayApp : ApplicationContext
 
         settingsForm.Activate();
         settingsForm.BringToFront();
+    }
+
+    /// <summary>
+    /// Re-registers the hotkey backend after the user picks a different
+    /// push-to-talk key in Settings — no relaunch needed. <c>Stop()</c>
+    /// unregisters whichever backend was active (finishing an in-flight
+    /// dictation via Released first, the same rule Quit and every other
+    /// teardown path follows); <c>Start()</c> registers the newly selected
+    /// one and, on conflict, raises "hotkey-conflict" through
+    /// <see cref="DictationController.ErrorRaised"/> exactly like the
+    /// startup path does — no separate dialog path.
+    /// </summary>
+    private void SwitchPushToTalkKey()
+    {
+        controller.Stop();
+        controller.Start();
     }
 
     private void OnStateChanged(DictationState state) => SafeInvoke(() => UpdateIcon(state));
@@ -221,7 +238,7 @@ public sealed class TrayApp : ApplicationContext
         pendingErrorCode = null;
         try
         {
-            ErrorDialogs.Show(code, settingsForm, RetryActionFor(code));
+            ErrorDialogs.Show(code, settingsForm, RetryActionFor(code), PushToTalkKeyLabel(settings.PushToTalkKey));
         }
         finally
         {
@@ -243,6 +260,14 @@ public sealed class TrayApp : ApplicationContext
     {
         "model-missing" or "model-load-failed" => () => modelLifecycle.StartDownload(settingsForm),
         _ => null,
+    };
+
+    /// <summary>The label named in the "hotkey-conflict" dialog — the key that actually failed to register, read fresh from settings (it may have just changed, mid-switch).</summary>
+    private static string PushToTalkKeyLabel(PushToTalkKey key) => key switch
+    {
+        PushToTalkKey.Ctrl => "Ctrl",
+        PushToTalkKey.CtrlAltSpace => "Ctrl+Alt+Space",
+        _ => "the configured push-to-talk key",
     };
 
     private void Quit()

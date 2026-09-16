@@ -21,9 +21,12 @@ public static class ErrorDialogs
     /// Shows the dialog for <paramref name="code"/>. <paramref name="retryDownload"/>
     /// is invoked when the user picks the affirmative button on a code that
     /// offers a download/re-download (model-missing, model-load-failed); it is
-    /// ignored for every other code.
+    /// ignored for every other code. <paramref name="pushToTalkKeyLabel"/> is
+    /// the currently configured push-to-talk key's display name ("Ctrl" or
+    /// "Ctrl+Alt+Space"); it is used only for "hotkey-conflict", so the dialog
+    /// names the key that actually failed instead of assuming which one it was.
     /// </summary>
-    public static void Show(string code, IWin32Window? owner, Action? retryDownload)
+    public static void Show(string code, IWin32Window? owner, Action? retryDownload, string pushToTalkKeyLabel)
     {
         switch (code)
         {
@@ -66,7 +69,7 @@ public static class ErrorDialogs
             case "hotkey-conflict":
                 ShowOk(owner,
                     "Hotkey already in use",
-                    "Ctrl+Alt+Space is already registered by another application. Quit that app or free the shortcut there, then relaunch VoiceFlow.");
+                    $"{pushToTalkKeyLabel} is already in use by another application, or couldn't be registered. Pick a different push-to-talk key in Settings, or free the shortcut in the other app, then try again.");
                 break;
 
             case "transcription-failed" or "transcription-timeout":

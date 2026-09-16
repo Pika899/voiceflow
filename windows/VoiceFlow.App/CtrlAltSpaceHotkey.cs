@@ -9,10 +9,11 @@ namespace VoiceFlow.App;
 /// through <c>RegisterHotKey</c>/<c>WM_HOTKEY</c> on a hidden message-only
 /// window. Mirrors <c>HotkeyManager.swift</c>'s contract: <see cref="Register"/>
 /// returns false on conflict, and every press eventually gets exactly one
-/// <see cref="Released"/>.
+/// <see cref="Released"/>. One of the two <see cref="PushToTalkBackend"/>
+/// options alongside <see cref="CtrlKeyMonitor"/>.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class GlobalHotkey : NativeWindow, IHotkey, IDisposable
+public sealed class CtrlAltSpaceHotkey : NativeWindow, IHotkey, IDisposable
 {
     private const int HotkeyId = 1;
 
@@ -27,7 +28,13 @@ public sealed class GlobalHotkey : NativeWindow, IHotkey, IDisposable
     public event Action? Pressed;
     public event Action? Released;
 
-    public GlobalHotkey()
+    // This backend is a fixed non-modifier chord (Ctrl+Alt+Space): Windows
+    // delivers WM_HOTKEY only for the completed combination, so there is no
+    // way to observe "Ctrl went down, then some other key" the way the bare
+    // Ctrl backend can. It therefore never has anything to cancel.
+    public event Action? Cancelled { add { } remove { } }
+
+    public CtrlAltSpaceHotkey()
     {
         // Parent = HWND_MESSAGE (-3): a message-only window has no visible
         // surface, never appears in the taskbar or z-order, and only needs
