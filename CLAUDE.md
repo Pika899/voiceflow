@@ -179,3 +179,56 @@ Tailwind, Supabase non c'entrano con questo progetto Swift nativo.
 - **Come si testa manualmente** — checklist di verifica end-to-end.
 - **Distribuzione** — se e quando si arriva a firma/notarizzazione per
   condividere l'app fuori dal proprio Mac.
+
+## Windows
+
+Il porting Windows di VoiceFlow vive interamente sotto `windows/`: è una
+soluzione **C#/.NET 8 separata** (`windows/VoiceFlow.Windows.sln`, progetti
+`VoiceFlow.Core`, `VoiceFlow.App`, `VoiceFlow.Tests`), non condivide file,
+target né dipendenze con lo Swift Package della root. Dettaglio del porting
+in `windows/README.md`.
+
+**Isolazione dal ramo macOS**: il lavoro Windows non deve mai toccare il
+codice Swift esistente. Prima di ogni commit su questo ramo, verifica che il
+diff fuori da `windows/`, `CLAUDE.md` e `docs/` sia vuoto:
+
+```bash
+git diff main -- . ':!windows' ':!CLAUDE.md' ':!docs'
+```
+
+Deve stampare niente. Se stampa qualcosa, il commit sta modificando il
+progetto Mac e va corretto prima di procedere.
+
+**Comandi (da questo Mac)**: qui c'è solo l'SDK .NET installato in
+`~/.dotnet` (via lo script `dotnet-install.sh` di Microsoft, senza root, non
+un pacchetto di sistema). Ogni comando `dotnet` richiede queste variabili
+d'ambiente nella sessione di shell:
+
+```bash
+export DOTNET_ROOT="$HOME/.dotnet" PATH="$HOME/.dotnet:$PATH"
+```
+
+Poi, dalla root del repo:
+
+```bash
+dotnet build windows/VoiceFlow.Windows.sln     # compila Core, App, Tests
+dotnet test windows/VoiceFlow.Windows.sln      # esegue la suite xUnit
+```
+
+Gli script in `windows/scripts/` (pensati per PowerShell su un PC Windows,
+ma equivalenti ai comandi sopra):
+
+```powershell
+.\windows\scripts\build.ps1     # dotnet build della soluzione, Release
+.\windows\scripts\test.ps1      # dotnet test della soluzione, Release
+.\windows\scripts\run.ps1       # avvia VoiceFlow.App con dotnet run
+.\windows\scripts\publish.ps1   # pubblica un eseguibile framework-dependent in windows/publish/
+```
+
+**La verifica manuale Windows è compito solo umano**: nessun agente ha una
+macchina Windows su cui parlare al microfono, concedere permessi o guardare
+la tray. La checklist è in
+`docs/superpowers/verification/2026-09-15-windows-manual-checklist.md` e,
+come quella Mac, ha caselle vuote finché non le compila una persona con
+valori osservati per davvero — mai un numero plausibile al posto di una
+misura.
