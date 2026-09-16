@@ -31,10 +31,12 @@ bugia.
 - [ ] L'app non apre nessuna finestra: compare solo un'icona nella tray
       (area accanto all'orologio; controlla "mostra icone nascoste" se non
       la vedi)
-- [ ] Tenendo premuto l'hotkey (Ctrl+Alt+Space) la prima volta, o aprendo le
-      Impostazioni, compare la finestra **"Model not downloaded"** con il
-      testo: *"The speech model hasn't been downloaded yet, or failed a
-      corruption check. Click OK to download it now, or Cancel."*
+- [ ] Al primo avvio, subito dopo la comparsa dell'icona nella tray, compare
+      **da sola** (nessun hotkey da premere, nessuna finestra da aprire) la
+      finestra **"Model not downloaded"** con il testo: *"The speech model
+      hasn't been downloaded yet, or failed a corruption check. Click OK to
+      download it now, or Cancel."* — l'app controlla il modello configurato
+      appena parte, prima di registrare l'hotkey
 - [ ] Clic su **OK** → appare la finestra di download con etichetta
       "Downloading <model> model..." e una barra di avanzamento che si
       muove
@@ -66,6 +68,9 @@ bugia.
       Model, Language, Play sounds, Launch at login
 - [ ] Toggle "Play sounds" ON → si sentono due suoni di sistema (uno a
       inizio, uno a fine dettatura); OFF → nessun suono
+- [ ] Cambia modello verso uno non ancora scaricato → la finestra "Model not
+      downloaded" compare **subito**, appena selezioni la nuova voce nel menu
+      a tendina — non serve premere l'hotkey
 - [ ] Cambia modello, esci (Quit dalla tray o dal pulsante nella finestra
       Impostazioni) e rilancia l'app → la scelta del modello è rimasta
 - [ ] Cambia lingua, esci e rilancia → la scelta della lingua è rimasta
@@ -88,11 +93,12 @@ bugia.
       testo: *"Ctrl+Alt+Space is already registered by another application.
       Quit that app or free the shortcut there, then relaunch VoiceFlow."*
       Libera la combinazione dopo il test.
-- [ ] **Modello corrotto**: tronca il file del modello (PowerShell:
-      `[System.IO.File]::WriteAllBytes("$env:LOCALAPPDATA\VoiceFlow\models\ggml-base.bin", (Get-Content "$env:LOCALAPPDATA\VoiceFlow\models\ggml-base.bin" -Encoding Byte -TotalCount 1000))`
-      o semplicemente cancella il file) → rilancia → compare **"Model not
-      downloaded"** (checksum non corrisponde più, stesso testo del primo
-      avvio) → Download → il modello si ri-scarica e l'engine si ricarica
+- [ ] **Modello corrotto**: cancella il file del modello (PowerShell:
+      `Remove-Item "$env:LOCALAPPDATA\VoiceFlow\models\ggml-base.bin"`) →
+      rilancia → compare **"Model not downloaded"** (stesso testo del primo
+      avvio: il file manca, quindi il controllo del checksum fallisce nello
+      stesso modo) → Download → il modello si ri-scarica e l'engine si
+      ricarica
 - [ ] **Finestra elevata**: apri Gestione attività **come amministratore**
       (tasto destro → "Esegui come amministratore"), prova a dettare in un
       suo campo di testo (se presente) → nessun testo compare, nessun

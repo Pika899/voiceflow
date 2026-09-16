@@ -1,4 +1,10 @@
+$ErrorActionPreference = "Stop"
+
 dotnet publish "$PSScriptRoot/../VoiceFlow.App" -c Release -r win-x64 --self-contained false -o "$PSScriptRoot/../publish"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "dotnet publish failed with exit code $LASTEXITCODE"
+    exit $LASTEXITCODE
+}
 
 Write-Host ""
 Write-Host "Pubblicato in: $PSScriptRoot/../publish"

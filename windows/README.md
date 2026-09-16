@@ -112,12 +112,16 @@ a ogni release, non è un posto dove salvare stato.
    icone accanto all'orologio, in basso a destra). Se non è visibile,
    controlla la freccia "mostra icone nascoste".
 
-6. **Al primo avvio il modello non è ancora scaricato**: appena provi a
-   dettare compare la finestra "Model not downloaded" (vedi sotto). Clic su
-   **OK** per scaricarlo: appare una finestra con una barra di avanzamento
-   determinata. A download completo (verificato con checksum SHA-256 contro
-   i valori noti) il motore Whisper si carica e l'icona torna a riposo
-   (grigia).
+6. **Al primo avvio il modello non è ancora scaricato**: subito dopo la
+   comparsa dell'icona nella tray, senza bisogno di premere l'hotkey o di
+   aprire nulla, compare **da sola** la finestra "Model not downloaded" —
+   l'app controlla il modello configurato all'avvio, prima ancora di
+   registrare l'hotkey. Clic su **OK** per scaricarlo: appare una finestra
+   con una barra di avanzamento determinata. A download completo (verificato
+   con checksum SHA-256 contro i valori noti) il motore Whisper si carica e
+   l'icona torna a riposo (grigia). Lo stesso succede, sempre senza premere
+   l'hotkey, se cambi modello dalle Impostazioni verso uno non ancora
+   scaricato: la finestra compare non appena selezioni la nuova voce.
 
 7. **Dettatura**: tieni premuto **Ctrl+Alt+Space** in un campo di testo,
    parla, rilascia. Il rilascio è rilevato appena una qualsiasi delle tre
