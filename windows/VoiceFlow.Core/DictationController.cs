@@ -15,11 +15,19 @@ public enum DictationState
 /// <see cref="ITranscriber"/>), all UI-free and hardware-free, so the whole
 /// flow is unit-testable.
 ///
-/// Threading contract: every public entry point and every callback (hotkey
-/// press/release, scheduled timeout, transcription completion) is expected to
-/// run on the same thread/synchronization context. <see cref="IScheduler"/> is
-/// the only port allowed to hop threads; it marshals its own work back onto
-/// that context, so this class itself never needs locks.
+/// Threading contract: every public entry point, and every private method
+/// that reads or mutates controller state (<see cref="State"/>, the
+/// remembered injected character, the run bookkeeping), is expected to run on
+/// the controller's own thread/synchronization context; this class itself
+/// never needs locks. <see cref="IScheduler.RunAsync"/> is the only place
+/// allowed to run work off that thread, and that work must never call a
+/// controller method directly — with a real scheduler it runs inside
+/// <c>Task.Run</c>, where there is no synchronization context to resume onto,
+/// so an ordinary <c>await</c> continuation would keep running on a
+/// thread-pool thread. The off-thread work's result comes back only through
+/// <see cref="IScheduler.Post"/> (used here for a transcription's completion)
+/// or <see cref="IScheduler.Schedule"/> (used for the timeout), both of which
+/// hand their callback back to the controller's own context.
 /// </summary>
 public sealed class DictationController
 {
@@ -144,6 +152,18 @@ public sealed class DictationController
             sounds.PlayStop();
         }
 
+        // Re-checked here, not just at press time: the model can become
+        // unavailable while a dictation was in flight (mirrors Swift's
+        // `guard let whisperEngine` in finishDictation()). Resolved once and
+        // passed down rather than re-read from the Func later, so the run
+        // that started with a given engine finishes with that same one.
+        var currentTranscriber = transcriber();
+        if (currentTranscriber is null)
+        {
+            SetError("model-missing");
+            return;
+        }
+
         SetState(DictationState.Transcribing);
 
         var thisRun = ++runId;
@@ -153,7 +173,7 @@ public sealed class DictationController
         // late result is dropped below rather than injected.
         timeoutHandle = scheduler.Schedule(TranscriptionTimeout, () => OnTimeout(thisRun));
 
-        _ = scheduler.RunAsync(() => RunTranscriptionAsync(thisRun, samples));
+        _ = scheduler.RunAsync(() => RunTranscriptionAsync(thisRun, currentTranscriber, samples));
     }
 
     private void OnTimeout(int forRun)
@@ -167,17 +187,21 @@ public sealed class DictationController
         SetError("transcription-timeout");
     }
 
-    private async Task RunTranscriptionAsync(int forRun, float[] samples)
+    private async Task RunTranscriptionAsync(int forRun, ITranscriber currentTranscriber, float[] samples)
     {
         try
         {
-            var result = await transcriber()!.TranscribeAsync(samples, settings().Language.WhisperCode(), CancellationToken.None)
+            // Legitimately off-thread work: ConfigureAwait(false) here is
+            // fine, since the result is never used directly — it's handed to
+            // scheduler.Post below, the only sanctioned way back onto the
+            // controller's own thread/context (see the class-level contract).
+            var result = await currentTranscriber.TranscribeAsync(samples, settings().Language.WhisperCode(), CancellationToken.None)
                 .ConfigureAwait(false);
-            OnTranscribed(forRun, result);
+            scheduler.Post(() => OnTranscribed(forRun, result));
         }
-        catch
+        catch (Exception ex)
         {
-            OnTranscriptionFailed(forRun);
+            scheduler.Post(() => OnTranscriptionFailed(forRun, ex));
         }
     }
 
@@ -211,7 +235,7 @@ public sealed class DictationController
         SetState(DictationState.Idle);
     }
 
-    private void OnTranscriptionFailed(int forRun)
+    private void OnTranscriptionFailed(int forRun, Exception exception)
     {
         if (!IsCurrentRun(forRun))
         {

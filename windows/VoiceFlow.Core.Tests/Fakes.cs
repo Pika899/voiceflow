@@ -110,7 +110,11 @@ public sealed class FakeTranscriber : ITranscriber
 /// Runs <see cref="RunAsync"/> work synchronously (up to its first await) and
 /// keeps <see cref="Schedule"/>d actions pending until <see cref="FireTimeout"/>
 /// fires the oldest one, or the caller disposes the handle — so tests are
-/// deterministic without <c>Task.Delay</c> or real threads.
+/// deterministic without <c>Task.Delay</c> or real threads. <see cref="Post"/>
+/// actions are queued rather than run inline, so a test can assert nothing
+/// happened yet, then call <see cref="DrainPosted"/> to prove the marshalling
+/// is what actually delivers the result — this is what a real scheduler's
+/// <c>Task.Run</c> would otherwise deliver from an arbitrary thread-pool thread.
 /// </summary>
 public sealed class FakeScheduler : IScheduler
 {
@@ -127,6 +131,19 @@ public sealed class FakeScheduler : IScheduler
     public Task? LastRunTask { get; private set; }
 
     public Task RunAsync(Func<Task> work) => LastRunTask = work();
+
+    public Queue<Action> Posted { get; } = new();
+
+    public void Post(Action action) => Posted.Enqueue(action);
+
+    /// <summary>Runs every action queued by <see cref="Post"/> so far, in order.</summary>
+    public void DrainPosted()
+    {
+        while (Posted.Count > 0)
+        {
+            Posted.Dequeue()();
+        }
+    }
 
     public void FireTimeout()
     {

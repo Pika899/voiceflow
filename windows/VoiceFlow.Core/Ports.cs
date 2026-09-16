@@ -46,13 +46,20 @@ public interface ITranscriber
 /// <summary>
 /// The only port allowed to hop threads. Everything else in
 /// <see cref="DictationController"/> runs on a single thread/synchronization
-/// context by contract: <see cref="RunAsync"/> does the off-thread work and
-/// marshals its continuation back, and <see cref="Schedule"/> invokes its
-/// action back on that same context after the delay.
+/// context by contract: <see cref="RunAsync"/> runs its work off-thread — that
+/// work must never call back into the controller directly, since there is no
+/// synchronization context to marshal it onto a real scheduler's Task.Run
+/// continuation; its returned <see cref="Task"/> is only for fire-and-forget
+/// or awaiting completion. <see cref="Post"/> is the one sanctioned way for
+/// that off-thread work to deliver a result back, and <see cref="Schedule"/>
+/// invokes its action on the same context after the delay.
 /// </summary>
 public interface IScheduler
 {
     IDisposable Schedule(TimeSpan delay, Action action);
 
     Task RunAsync(Func<Task> work);
+
+    /// <summary>Runs <paramref name="action"/> on the controller's thread/context. The only sanctioned way for off-thread work to touch the controller.</summary>
+    void Post(Action action);
 }

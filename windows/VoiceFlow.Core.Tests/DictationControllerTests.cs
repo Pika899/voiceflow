@@ -45,23 +45,41 @@ public class DictationControllerTests
 
         /// <summary>
         /// Resolves <paramref name="runTask"/>'s transcription and blocks
-        /// until the controller has processed the result. The fake scheduler
-        /// runs the transcription inline up to its first await, so nothing
-        /// but that final continuation is actually asynchronous here — this
-        /// just makes the test wait for it instead of racing it.
+        /// until the controller has queued its result with the scheduler
+        /// (<see cref="Scheduler"/>'s <c>Post</c>, not yet delivered). The
+        /// fake scheduler runs the transcription inline up to its first
+        /// await, so nothing but that final continuation is actually
+        /// asynchronous here — this just makes the test wait for it instead
+        /// of racing it.
         /// </summary>
         private static void Drain(Task runTask) => runTask.GetAwaiter().GetResult();
 
-        public void Complete(Task runTask, FakeTranscriber transcriber, string text)
+        /// <summary>Signals a successful transcription, but does not deliver it — see <see cref="Drain"/>.</summary>
+        public void SignalCompletion(Task runTask, FakeTranscriber transcriber, string text)
         {
             transcriber.Complete(text);
             Drain(runTask);
         }
 
-        public void Fail(Task runTask, FakeTranscriber transcriber, Exception ex)
+        /// <summary>Signals a failed transcription, but does not deliver it — see <see cref="Drain"/>.</summary>
+        public void SignalFailure(Task runTask, FakeTranscriber transcriber, Exception ex)
         {
             transcriber.Fail(ex);
             Drain(runTask);
+        }
+
+        /// <summary>Signals and fully delivers a successful transcription (signal + the scheduler's Post drained).</summary>
+        public void Complete(Task runTask, FakeTranscriber transcriber, string text)
+        {
+            SignalCompletion(runTask, transcriber, text);
+            Scheduler.DrainPosted();
+        }
+
+        /// <summary>Signals and fully delivers a failed transcription (signal + the scheduler's Post drained).</summary>
+        public void Fail(Task runTask, FakeTranscriber transcriber, Exception ex)
+        {
+            SignalFailure(runTask, transcriber, ex);
+            Scheduler.DrainPosted();
         }
     }
 
@@ -205,6 +223,88 @@ public class DictationControllerTests
         Assert.Equal(1, h.Transcriber!.CallCount);
         Assert.Same(h.Audio.SamplesToReturn, h.Transcriber.LastSamples);
         Assert.Equal("it", h.Transcriber.LastLanguageCode);
+    }
+
+    [Fact]
+    public void ReleaseWithNoTranscriberRaisesModelMissingWithoutSchedulingTranscription()
+    {
+        // The model can become unavailable while a dictation was in flight;
+        // finishDictation()'s guard on the Mac is re-checked here too, not
+        // just at press time.
+        var h = new Harness();
+        h.Hotkey.RaisePressed();
+        Assert.Equal(DictationState.Listening, h.Controller.State);
+        h.Transcriber = null;
+
+        h.Hotkey.RaiseReleased();
+
+        Assert.Equal(DictationState.Error, h.Controller.State);
+        Assert.Equal("model-missing", h.Controller.LastErrorCode);
+        Assert.Equal(1, h.Audio.StopCallCount);
+        Assert.Equal(1, h.Sounds.StopCount);
+        Assert.Equal(0, h.Scheduler.PendingCount); // no timeout scheduled
+        Assert.Null(h.Scheduler.LastRunTask); // no transcription started
+    }
+
+    [Fact]
+    public void SuccessfulResultIsMarshalledThroughPostNotDeliveredInline()
+    {
+        // Proves the single-thread contract: signaling the transcriber and
+        // draining its Task only gets the result as far as the scheduler's
+        // Post queue. Nothing that touches controller state may run before
+        // the scheduler actually delivers it.
+        var h = new Harness();
+        var run = h.PressAndRelease();
+
+        h.SignalCompletion(run, h.Transcriber!, "Ciao");
+
+        Assert.Equal(DictationState.Transcribing, h.Controller.State);
+        Assert.Empty(h.Injector.Injected);
+
+        h.Scheduler.DrainPosted();
+
+        Assert.Equal(DictationState.Idle, h.Controller.State);
+        Assert.Equal(["Ciao"], h.Injector.Injected);
+    }
+
+    [Fact]
+    public void FailedTranscriptionIsMarshalledThroughPostNotDeliveredInline()
+    {
+        var h = new Harness();
+        var run = h.PressAndRelease();
+
+        h.SignalFailure(run, h.Transcriber!, new InvalidOperationException("boom"));
+
+        Assert.Equal(DictationState.Transcribing, h.Controller.State);
+        Assert.Null(h.Controller.LastErrorCode);
+
+        h.Scheduler.DrainPosted();
+
+        Assert.Equal(DictationState.Error, h.Controller.State);
+        Assert.Equal("transcription-failed", h.Controller.LastErrorCode);
+    }
+
+    [Fact]
+    public void TimeoutBeforeDrainingAPostedResultStillDropsIt()
+    {
+        // The transcription can finish (and get as far as the scheduler's
+        // Post queue) before the timeout fires but be delivered only after —
+        // the run id/timedOutRunId bookkeeping must drop it regardless of
+        // when Post is drained relative to the timeout.
+        var h = new Harness();
+        var run = h.PressAndRelease();
+        h.SignalCompletion(run, h.Transcriber!, "Ciao"); // ready, not yet delivered
+
+        h.Scheduler.FireTimeout(); // timeout wins the race first
+
+        Assert.Equal(DictationState.Error, h.Controller.State);
+        Assert.Equal("transcription-timeout", h.Controller.LastErrorCode);
+
+        h.Scheduler.DrainPosted(); // the late result is delivered now
+
+        Assert.Empty(h.Injector.Injected);
+        Assert.Equal(DictationState.Error, h.Controller.State);
+        Assert.Equal("transcription-timeout", h.Controller.LastErrorCode);
     }
 
     [Fact]
