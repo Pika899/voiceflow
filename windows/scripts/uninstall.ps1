@@ -23,8 +23,33 @@ $ErrorActionPreference = "Stop"
 
 $runKeyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $runValueName = "VoiceFlow"
+
+# A destructive script must not depend on the environment being sane: if
+# APPDATA/LOCALAPPDATA were empty or relative, Join-Path would silently
+# produce a relative "VoiceFlow" path resolved against the current working
+# directory, and Remove-Item -Recurse -Force below could then delete an
+# unrelated folder that happens to have that name there. Fail hard instead.
+function Assert-RootedEnvPath {
+    param([string]$Name, [string]$Value)
+    if ([string]::IsNullOrEmpty($Value) -or -not [System.IO.Path]::IsPathRooted($Value)) {
+        throw "Variabile d'ambiente $Name mancante o non assoluta ('$Value'): interrompo per sicurezza, prima di toccare qualunque file."
+    }
+}
+function Assert-TargetEndsWithVoiceFlow {
+    param([string]$Path)
+    if (-not $Path.EndsWith('\VoiceFlow', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Percorso di destinazione inatteso ('$Path'): interrompo per sicurezza, prima di toccare qualunque file."
+    }
+}
+
+Assert-RootedEnvPath -Name "APPDATA" -Value $env:APPDATA
+Assert-RootedEnvPath -Name "LOCALAPPDATA" -Value $env:LOCALAPPDATA
+
 $appDataDir = Join-Path $env:APPDATA "VoiceFlow"
 $localAppDataDir = Join-Path $env:LOCALAPPDATA "VoiceFlow"
+
+Assert-TargetEndsWithVoiceFlow -Path $appDataDir
+Assert-TargetEndsWithVoiceFlow -Path $localAppDataDir
 
 # Purely lexical path normalization (works even if the target does not
 # exist yet, unlike Resolve-Path).
@@ -87,7 +112,7 @@ if (-not $Force) {
 Write-Host "1. Arresto del processo VoiceFlow.App..."
 $runningProcesses = Get-Process -Name VoiceFlow.App -ErrorAction SilentlyContinue
 if ($runningProcesses) {
-    $runningProcesses | Stop-Process -Force
+    $runningProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
     foreach ($proc in $runningProcesses) {
         Wait-Process -Id $proc.Id -Timeout 5 -ErrorAction SilentlyContinue
     }
