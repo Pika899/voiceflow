@@ -21,8 +21,15 @@ public sealed class WasapiAudioCapture : IAudioCapture
     private const int TargetSampleRate = 16000;
     private const uint AccessDeniedHResult = 0x80070005;
 
+    // StopRecording() only requests a stop; NAudio's capture thread finishes
+    // asynchronously and signals RecordingStopped once it actually has. This
+    // is a design bound on how long Stop() waits for that signal before
+    // giving up and draining anyway — not a measured latency.
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(1);
+
     private readonly object bufferLock = new();
     private readonly List<float> buffer = new();
+    private readonly ManualResetEventSlim recordingStoppedEvent = new(initialState: false);
 
     private WasapiCapture? capture;
     private BufferedWaveProvider? bufferedProvider;
@@ -51,14 +58,16 @@ public sealed class WasapiAudioCapture : IAudioCapture
             lock (bufferLock)
             {
                 buffer.Clear();
+                bufferedProvider = provider;
+                resampled = resampler;
+                capture = newCapture;
             }
 
-            bufferedProvider = provider;
-            resampled = resampler;
-            capture = newCapture;
-            capture.DataAvailable += OnDataAvailable;
+            recordingStoppedEvent.Reset();
+            newCapture.DataAvailable += OnDataAvailable;
+            newCapture.RecordingStopped += OnRecordingStopped;
 
-            capture.StartRecording();
+            newCapture.StartRecording();
         }
         catch (Exception ex) when (IsAccessDenied(ex))
         {
@@ -74,21 +83,43 @@ public sealed class WasapiAudioCapture : IAudioCapture
 
     public float[] Stop()
     {
-        if (capture is null)
+        WasapiCapture? currentCapture;
+        lock (bufferLock)
+        {
+            currentCapture = capture;
+        }
+        if (currentCapture is null)
         {
             return Array.Empty<float>();
         }
 
-        capture.StopRecording();
-        capture.DataAvailable -= OnDataAvailable;
+        currentCapture.StopRecording();
+        // Wait for NAudio's capture thread to actually finish — and, per
+        // NAudio's event ordering, for its last DataAvailable to have already
+        // landed — before unsubscribing and draining. Bounded so a stuck
+        // driver can't hang Stop() forever; the samples captured before the
+        // timeout are still returned either way.
+        recordingStoppedEvent.Wait(StopTimeout);
+
+        currentCapture.DataAvailable -= OnDataAvailable;
+        currentCapture.RecordingStopped -= OnRecordingStopped;
+
         // Whatever is still sitting in the resampler's internal pipeline gets
         // flushed out here, same as the Mac converter draining on stop().
         Drain();
 
-        capture.Dispose();
-        capture = null;
-        bufferedProvider = null;
-        resampled = null;
+        lock (bufferLock)
+        {
+            // Locked so a DataAvailable callback that is still in flight (the
+            // wait above is a best effort, not a guarantee) can never observe
+            // these as non-null and then touch a capture object we're about
+            // to dispose.
+            capture = null;
+            bufferedProvider = null;
+            resampled = null;
+        }
+
+        currentCapture.Dispose();
 
         lock (bufferLock)
         {
@@ -98,8 +129,19 @@ public sealed class WasapiAudioCapture : IAudioCapture
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        bufferedProvider?.AddSamples(e.Buffer, 0, e.BytesRecorded);
+        lock (bufferLock)
+        {
+            bufferedProvider?.AddSamples(e.Buffer, 0, e.BytesRecorded);
+        }
         Drain();
+    }
+
+    private void OnRecordingStopped(object? sender, StoppedEventArgs e)
+    {
+        // Whatever the device reported (including a failure) doesn't
+        // invalidate the samples already captured — Stop() still returns
+        // them; only the wait itself is what this event unblocks.
+        recordingStoppedEvent.Set();
     }
 
     // Holds bufferLock for the whole read-and-append: the sample chain
@@ -108,14 +150,14 @@ public sealed class WasapiAudioCapture : IAudioCapture
     // Stop's final drain) can reach this method around teardown.
     private void Drain()
     {
-        if (resampled is null)
-        {
-            return;
-        }
-
         var temp = new float[1024];
         lock (bufferLock)
         {
+            if (resampled is null)
+            {
+                return;
+            }
+
             int read;
             while ((read = resampled.Read(temp, 0, temp.Length)) > 0)
             {
@@ -132,12 +174,16 @@ public sealed class WasapiAudioCapture : IAudioCapture
         if (failedCapture is not null)
         {
             failedCapture.DataAvailable -= OnDataAvailable;
+            failedCapture.RecordingStopped -= OnRecordingStopped;
             failedCapture.Dispose();
         }
 
-        capture = null;
-        bufferedProvider = null;
-        resampled = null;
+        lock (bufferLock)
+        {
+            capture = null;
+            bufferedProvider = null;
+            resampled = null;
+        }
     }
 
     // WASAPI shared-mode capture is overwhelmingly stereo or mono in

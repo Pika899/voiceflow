@@ -98,14 +98,17 @@ public sealed class GlobalHotkey : NativeWindow, IHotkey, IDisposable
 
     private void OnReleasePollTick(object? sender, EventArgs e)
     {
-        bool stillDown = IsKeyDown(NativeMethods.VK_SPACE)
-            || IsKeyDown(NativeMethods.VK_CONTROL)
-            || IsKeyDown(NativeMethods.VK_MENU);
-        if (stillDown)
+        bool chordFullyHeld = IsKeyDown(NativeMethods.VK_SPACE)
+            && IsKeyDown(NativeMethods.VK_CONTROL)
+            && IsKeyDown(NativeMethods.VK_MENU);
+        if (chordFullyHeld)
         {
             return;
         }
 
+        // Chord no longer held; mirrors the Mac hotkey release semantics
+        // (Carbon's kEventHotKeyReleased fires the instant any key of the
+        // combination lifts, not only once every key is up).
         releasePollTimer.Stop();
         if (isDown)
         {
