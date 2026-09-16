@@ -31,6 +31,12 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    // Frees the temporary GDI icon handle Bitmap.GetHicon() hands back — see
+    // VoiceFlow.App.TrayIcons, which clones it into an owned Icon and then
+    // destroys the raw handle immediately.
+    [DllImport("user32.dll")]
+    internal static extern bool DestroyIcon(IntPtr hIcon);
 }
 
 [StructLayout(LayoutKind.Sequential)]
