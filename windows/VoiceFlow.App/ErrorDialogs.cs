@@ -113,6 +113,17 @@ public static class ErrorDialogs
         }
     }
 
+    /// <summary>
+    /// Last-resort dialog for an exception caught at a message-loop boundary
+    /// (see TrayApp's try/catch around its event handlers) — never the
+    /// expected path, so it carries the raw exception message rather than
+    /// one of the curated texts above.
+    /// </summary>
+    public static void ShowUnexpected(IWin32Window? owner, Exception exception)
+    {
+        ShowOk(owner, "Unexpected error", $"VoiceFlow hit an unexpected error: {exception.Message}");
+    }
+
     private static void OpenSettings(string uri)
     {
         try

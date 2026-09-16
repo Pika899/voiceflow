@@ -11,6 +11,10 @@ public sealed class WhisperEngineException(string message, Exception? inner = nu
 public sealed class WhisperEngine : IDisposable, ITranscriber
 {
     private readonly WhisperFactory factory;
+    private readonly object lifecycleLock = new();
+    private int inFlight;
+    private bool disposeRequested;
+    private bool factoryDisposed;
 
     public WhisperEngine(string modelPath)
     {
@@ -25,6 +29,41 @@ public sealed class WhisperEngine : IDisposable, ITranscriber
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(float[] samples16k, string languageCode, CancellationToken ct = default)
+    {
+        lock (lifecycleLock)
+        {
+            if (disposeRequested)
+            {
+                throw new ObjectDisposedException(nameof(WhisperEngine));
+            }
+
+            inFlight++;
+        }
+
+        try
+        {
+            return await TranscribeCoreAsync(samples16k, languageCode, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Unlike ARC on the Mac, a .NET Dispose() does not wait out
+            // in-flight callers holding a reference: whoever's the last one
+            // out (this finally, or Dispose() itself if no call is running)
+            // is the one that actually frees the native whisper.cpp context,
+            // so a Dispose() that lands mid-inference never races the native
+            // call running on the thread pool below.
+            lock (lifecycleLock)
+            {
+                inFlight--;
+                if (disposeRequested && inFlight == 0)
+                {
+                    DisposeFactory();
+                }
+            }
+        }
+    }
+
+    private async Task<TranscriptionResult> TranscribeCoreAsync(float[] samples16k, string languageCode, CancellationToken ct)
     {
         // Nothing captured (hotkey tapped without speaking): don't hand
         // whisper an empty buffer, just report an empty transcription.
@@ -62,5 +101,27 @@ public sealed class WhisperEngine : IDisposable, ITranscriber
 
     public static string Trim(string text) => text.Trim();
 
-    public void Dispose() => factory.Dispose();
+    public void Dispose()
+    {
+        lock (lifecycleLock)
+        {
+            disposeRequested = true;
+            if (inFlight == 0)
+            {
+                DisposeFactory();
+            }
+        }
+    }
+
+    // Always called with lifecycleLock held.
+    private void DisposeFactory()
+    {
+        if (factoryDisposed)
+        {
+            return;
+        }
+
+        factoryDisposed = true;
+        factory.Dispose();
+    }
 }

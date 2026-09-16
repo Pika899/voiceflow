@@ -61,14 +61,14 @@ public sealed class TrayApp : ApplicationContext
         var textInjector = new SendInputTextInjector();
         var soundPlayer = new SystemSoundPlayer();
 
-        // One ModelManager for the app's lifetime: its HttpClient is never
-        // disposed by design (see ModelManager's own doc comment).
+        // One long-lived ModelManager for the app's whole lifetime; its
+        // HttpClient is intentionally never disposed.
         var modelManager = new ModelManager(WindowsPaths.ModelsDirectory);
         modelLifecycle = new ModelLifecycle(
             modelManager,
             () => settings,
             HandleError,
-            onEngineLoaded: () => UpdateIcon(DictationState.Idle));
+            onEngineLoaded: () => SafeInvoke(() => UpdateIcon(DictationState.Idle)));
 
         controller = new DictationController(
             audioCapture,
@@ -102,7 +102,7 @@ public sealed class TrayApp : ApplicationContext
     private ContextMenuStrip BuildContextMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Settings…", null, (_, _) => ShowSettings());
+        menu.Items.Add("Settings…", null, (_, _) => SafeInvoke(ShowSettings));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => Quit());
         return menu;
@@ -112,7 +112,7 @@ public sealed class TrayApp : ApplicationContext
     {
         if (e.Button == MouseButtons.Left)
         {
-            ShowSettings();
+            SafeInvoke(ShowSettings);
         }
     }
 
@@ -125,7 +125,7 @@ public sealed class TrayApp : ApplicationContext
             settingsStore,
             getSettings: () => settings,
             setSettings: updated => settings = updated,
-            onModelChanged: () => modelLifecycle.LoadModelIfPresent(),
+            onModelChanged: () => SafeInvoke(() => modelLifecycle.LoadModelIfPresent()),
             onQuit: Quit);
 
         if (!settingsForm.Visible)
@@ -137,7 +137,7 @@ public sealed class TrayApp : ApplicationContext
         settingsForm.BringToFront();
     }
 
-    private void OnStateChanged(DictationState state) => UpdateIcon(state);
+    private void OnStateChanged(DictationState state) => SafeInvoke(() => UpdateIcon(state));
 
     private void UpdateIcon(DictationState state) => notifyIcon.Icon = TrayIcons.For(state);
 
@@ -148,7 +148,9 @@ public sealed class TrayApp : ApplicationContext
     /// icon always reflects the error; the dialog itself is deferred if one
     /// is already on screen.
     /// </summary>
-    private void HandleError(string code)
+    private void HandleError(string code) => SafeInvoke(() => HandleErrorCore(code));
+
+    private void HandleErrorCore(string code)
     {
         UpdateIcon(DictationState.Error);
 
@@ -159,6 +161,49 @@ public sealed class TrayApp : ApplicationContext
         }
 
         PresentErrorDialog(code);
+    }
+
+    /// <summary>
+    /// Runs a message-loop-invoked callback (a WndProc-driven event, a
+    /// ToolStripItem click, a posted continuation) under a catch-all: WinForms
+    /// terminates the whole process on an unhandled exception escaping such a
+    /// callback, so a bug in a dialog or in the model lifecycle must never be
+    /// allowed to propagate past this boundary.
+    /// </summary>
+    private void SafeInvoke(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            ShowUnexpectedError(ex);
+        }
+    }
+
+    private void ShowUnexpectedError(Exception ex)
+    {
+        if (isPresentingDialog)
+        {
+            // Best effort: honor the same one-dialog-at-a-time rule as
+            // HandleErrorCore rather than stacking a second dialog. There is
+            // no pendingErrorCode-style re-presentation for this path — an
+            // unexpected exception here is already a bug, not a state the
+            // rest of the app is waiting to hear about.
+            return;
+        }
+
+        bool wasPresenting = isPresentingDialog;
+        isPresentingDialog = true;
+        try
+        {
+            ErrorDialogs.ShowUnexpected(settingsForm, ex);
+        }
+        finally
+        {
+            isPresentingDialog = wasPresenting;
+        }
     }
 
     private void PresentErrorDialog(string code)
@@ -194,12 +239,26 @@ public sealed class TrayApp : ApplicationContext
 
     private void Quit()
     {
-        controller.Stop();
-        notifyIcon.Visible = false;
-        notifyIcon.Dispose();
-        modelLifecycle.Dispose();
-        hotkey.Dispose();
-        settingsForm?.Dispose();
-        ExitThread();
+        // Cleanup runs in try/catch so a throwing Dispose() (e.g. from
+        // ModelLifecycle, which calls into the native WhisperEngine) can't
+        // leave the tray icon stuck and the process un-exitable; ExitThread()
+        // always runs via the finally, so quitting is never blocked by it.
+        try
+        {
+            controller.Stop();
+            notifyIcon.Visible = false;
+            notifyIcon.Dispose();
+            modelLifecycle.Dispose();
+            hotkey.Dispose();
+            settingsForm?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            ShowUnexpectedError(ex);
+        }
+        finally
+        {
+            ExitThread();
+        }
     }
 }
