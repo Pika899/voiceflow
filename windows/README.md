@@ -76,6 +76,23 @@ winget install Microsoft.DotNet.DesktopRuntime.8
 `windows/publish/` è ignorata da git (`windows/.gitignore`): va rigenerata
 a ogni release, non è un posto dove salvare stato.
 
+## Eseguibile già compilato (senza SDK)
+
+Ogni versione taggata ha anche il build Windows pronto in
+`releases/VoiceFlow-<tag>-windows-x64.zip` nella root del repository
+(prodotto con `dotnet publish -r win-x64 --self-contained false`). Per usarlo
+su un PC senza strumenti di sviluppo:
+
+1. installa il **.NET 8 Desktop Runtime** (`winget install
+   Microsoft.DotNet.DesktopRuntime.8 --source winget`, oppure da
+   https://dotnet.microsoft.com/download/dotnet/8.0);
+2. estrai lo zip in una cartella qualsiasi (es. `Desktop\VoiceFlow`);
+3. lancia `VoiceFlow.App.exe` (SmartScreen: "More info" → "Run anyway").
+
+Il modello Whisper si scarica comunque al primo avvio. Il log e i percorsi
+sono gli stessi descritti sotto; per disinstallare vale `uninstall.ps1` (nel
+repository) più la cancellazione della cartella estratta.
+
 ## Prima esecuzione sul PC di destinazione — cosa aspettarsi
 
 1. **Installa i prerequisiti**: Git e il .NET 8 Desktop Runtime.

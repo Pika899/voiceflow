@@ -138,7 +138,9 @@ lavora a feature nuove:
   Si apre con `ditto -x -k releases/VoiceFlow-<tag>.app.zip <cartella>`.
 
 Versioni: `v1.0.0` (dettatura locale, fn, suoni, modelli base/small),
-`v1.1.0` (+ modello medium).
+`v1.1.0` (+ modello medium), `v1.2.0` (+ porting Windows in `windows/`;
+l'eseguibile Windows è `releases/VoiceFlow-<tag>-windows-x64.zip`,
+framework-dependent: sul PC serve il .NET 8 Desktop Runtime).
 
 Le feature nuove vanno su un branch dedicato partendo da `main`; `dist/`
 viene sovrascritta a ogni build e non è un posto sicuro.
