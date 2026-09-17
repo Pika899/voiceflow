@@ -240,6 +240,15 @@ disinstallazione.
   `Whisper.net.Runtime.NoAvx`, che Whisper.net sceglie da solo. Senza di esso
   il caricamento del modello fallisce con la finestra "Model couldn't be
   loaded" anche a file integro (osservato su un i7-3770 il 2026-09-17).
+- **Velocità su CPU senza AVX2 — esperimento fatto e scartato**: ridurre la
+  finestra dell'encoder di Whisper in proporzione alla dettatura
+  (`audio_ctx` 768 invece di 1500, come l'esempio `stream` di whisper.cpp) ha
+  dimezzato i tempi su un i7-3770 senza AVX2 (2026-09-17: da 20–22 s a
+  9–10 s per frase, modello Base) ma l'utente ha giudicato il testo
+  chiaramente peggiore. È stato tolto: la finestra resta quella piena.
+  Su quel PC il modello Base impiega ~20 s a frase e Small supera il timeout
+  di 60 s; Medium non è praticabile. Su CPU con AVX2 i tempi sono di tutt'altro
+  ordine e vanno misurati lì.
 - **Finestre elevate (amministratore)**: `SendInput` non può scrivere in una
   finestra che gira con privilegi più alti del processo che invia l'input
   (UIPI — User Interface Privilege Isolation, una protezione di Windows).
