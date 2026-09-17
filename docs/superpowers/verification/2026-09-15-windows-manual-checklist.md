@@ -169,10 +169,6 @@ misuralo tu con un cronometro o a occhio.
 - base: misurato ___ s
 - small: misurato ___ s
 - medium: misurato ___ s
-- [ ] Per la stessa frase, modello base: apri `voiceflow.log` e annota i
-      valori esatti di `duration` e `audioCtx` dalla riga `event
-      transcribed` (Ruling R-W8 — finestra dell'encoder proporzionale alla
-      dettatura): duration=___ ms  audioCtx=___
 
 ## H. Antivirus
 

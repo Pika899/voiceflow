@@ -102,8 +102,8 @@ public sealed class FakeTranscriber : ITranscriber
         return pending.Task;
     }
 
-    public void Complete(string text, int audioContext = 0) =>
-        (pending ?? throw new InvalidOperationException("TranscribeAsync was not called.")).SetResult(new TranscriptionResult(text, TimeSpan.Zero, audioContext));
+    public void Complete(string text) =>
+        (pending ?? throw new InvalidOperationException("TranscribeAsync was not called.")).SetResult(new TranscriptionResult(text, TimeSpan.Zero));
 
     public void Fail(Exception ex) =>
         (pending ?? throw new InvalidOperationException("TranscribeAsync was not called.")).SetException(ex);

@@ -57,9 +57,9 @@ public class DictationControllerTests
         private static void Drain(Task runTask) => runTask.GetAwaiter().GetResult();
 
         /// <summary>Signals a successful transcription, but does not deliver it — see <see cref="Drain"/>.</summary>
-        public void SignalCompletion(Task runTask, FakeTranscriber transcriber, string text, int audioContext = 0)
+        public void SignalCompletion(Task runTask, FakeTranscriber transcriber, string text)
         {
-            transcriber.Complete(text, audioContext);
+            transcriber.Complete(text);
             Drain(runTask);
         }
 
@@ -71,9 +71,9 @@ public class DictationControllerTests
         }
 
         /// <summary>Signals and fully delivers a successful transcription (signal + the scheduler's Post drained).</summary>
-        public void Complete(Task runTask, FakeTranscriber transcriber, string text, int audioContext = 0)
+        public void Complete(Task runTask, FakeTranscriber transcriber, string text)
         {
-            SignalCompletion(runTask, transcriber, text, audioContext);
+            SignalCompletion(runTask, transcriber, text);
             Scheduler.DrainPosted();
         }
 
@@ -584,7 +584,7 @@ public class DictationControllerTests
         h.Audio.SamplesToReturn = [1f, 2f, 3f];
         var run = h.PressAndRelease();
 
-        h.Complete(run, h.Transcriber!, "Ciao", audioContext: 900);
+        h.Complete(run, h.Transcriber!, "Ciao");
 
         var listeningStopped = h.Diagnostics.Single(d => d.Event == "listening-stopped");
         Assert.Equal(3, listeningStopped.Samples);
@@ -594,7 +594,6 @@ public class DictationControllerTests
         var transcribed = h.Diagnostics.Single(d => d.Event == "transcribed");
         Assert.Equal(TimeSpan.Zero, transcribed.Duration); // FakeTranscriber always reports TimeSpan.Zero
         Assert.Equal(4, transcribed.Characters); // "Ciao".Length
-        Assert.Equal(900, transcribed.AudioContext); // forwarded from TranscriptionResult.AudioContext
 
         var injected = h.Diagnostics.Single(d => d.Event == "injected");
         Assert.Equal(4, injected.Characters);

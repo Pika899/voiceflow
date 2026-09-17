@@ -258,35 +258,6 @@ disinstallazione.
   interviene a ogni nuova build (vedi sopra). Non è previsto un certificato
   di firma in v1 (fuori scope, come sul Mac).
 
-### Prestazioni su CPU senza AVX2
-
-L'encoder di whisper.cpp lavora sempre su una finestra fissa di 30 secondi
-(`n_audio_ctx = 1500`), indipendentemente da quanto audio è stato
-effettivamente catturato: su una CPU senza AVX2 (runtime `NoAvx`) questo
-rende la trascrizione lenta anche per una dettatura di un secondo. L'app
-riduce quella finestra in proporzione alla dettatura — con un minimo di
-768, lo stesso valore usato dall'esempio `stream` di whisper.cpp — invece di
-elaborare sempre 30 secondi.
-
-Il costo onesto: sotto quel minimo di 768 whisper.cpp tende a "inventare"
-più facilmente del testo (allucinazioni) su audio molto corto o silenzioso,
-quindi una dettatura breve può perdere un po' di accuratezza rispetto alla
-finestra piena. È una scelta di progetto, non una misura: l'effetto reale va
-verificato leggendo `audioCtx=<n>` nella riga `event transcribed` del log
-diagnostico (vedi "Log diagnostico" sopra) insieme a `duration=<n>ms`.
-
-Numeri misurati su un i7-3770 senza AVX2, 2026-09-17 (prima di questa
-modifica, finestra piena a 1500 sempre):
-
-| modello | audio catturato | trascrizione | caratteri |
-|---|---|---|---|
-| base | 2.9 s | 22 516 ms | 22 |
-| base | 4.9 s | 20 178 ms | 68 |
-| small | 1.8 s | > 60 s (timeout; risultato tardivo a ~82 s) | — |
-
-Nessun altro numero in questa sezione è una misura: è un parametro di
-progetto (50 frame/s, 50 frame di margine, minimo 768, massimo 1500).
-
 ## Come segnalare un problema
 
 Se qualcosa non funziona, includi nella segnalazione:
