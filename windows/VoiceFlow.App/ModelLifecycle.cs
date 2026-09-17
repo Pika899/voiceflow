@@ -15,14 +15,17 @@ namespace VoiceFlow.App;
 ///
 /// Error presentation is left to the caller via <paramref name="onError"/>:
 /// only the composition root (<see cref="TrayApp"/>) knows whether a dialog
-/// is already on screen and needs to defer this one.
+/// is already on screen and needs to defer this one. <paramref name="onError"/>
+/// also carries the exception behind the code (null for "model-missing",
+/// which has none) — these errors never reach <see cref="DictationController"/>,
+/// so its own <c>LastErrorException</c> would be the wrong, unrelated source.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class ModelLifecycle : IDisposable
 {
     private readonly ModelManager modelManager;
     private readonly Func<Settings> settings;
-    private readonly Action<string> onError;
+    private readonly Action<string, Exception?> onError;
     private readonly Action onEngineLoaded;
 
     // Identifies the download whose completion is still welcome. Cancel (via
@@ -34,7 +37,7 @@ public sealed class ModelLifecycle : IDisposable
 
     public WhisperEngine? Engine { get; private set; }
 
-    public ModelLifecycle(ModelManager modelManager, Func<Settings> settings, Action<string> onError, Action onEngineLoaded)
+    public ModelLifecycle(ModelManager modelManager, Func<Settings> settings, Action<string, Exception?> onError, Action onEngineLoaded)
     {
         this.modelManager = modelManager;
         this.settings = settings;
@@ -51,7 +54,7 @@ public sealed class ModelLifecycle : IDisposable
         var model = ModelCatalogue.For(settings().Model);
         if (!modelManager.IsModelPresentAndValid(model))
         {
-            onError("model-missing");
+            onError("model-missing", null);
             return;
         }
 
@@ -68,12 +71,11 @@ public sealed class ModelLifecycle : IDisposable
         }
         catch (WhisperEngineException ex)
         {
-            // Logged directly here (in addition to TrayApp.HandleErrorCore's
-            // own DiagnosticLog.Error call for every error code) because this
-            // exception never reaches DictationController.LastErrorException
-            // — it is caught before the controller is even involved.
-            DiagnosticLog.Error("model-load-failed", ex);
-            onError("model-load-failed");
+            // The exception travels through onError to TrayApp, which logs
+            // it there (the single place that logs every error code) — this
+            // exception never reaches DictationController.LastErrorException,
+            // since it is caught before the controller is even involved.
+            onError("model-load-failed", ex);
         }
     }
 
@@ -129,7 +131,7 @@ public sealed class ModelLifecycle : IDisposable
             CloseAndDispose(form);
             if (activeDownloadId == downloadId)
             {
-                onError("model-download-failed");
+                onError("model-download-failed", ex);
             }
         }
     }

@@ -84,7 +84,12 @@ public sealed class TrayApp : ApplicationContext
             () => settings,
             () => modelLifecycle.Engine);
         controller.StateChanged += OnStateChanged;
-        controller.ErrorRaised += HandleError;
+        // controller.LastErrorException is always freshly set just before
+        // ErrorRaised fires (SetError sets both together), so reading it here
+        // is safe — this is the controller-sourced counterpart to
+        // ModelLifecycle's onError, which carries its own exception directly
+        // instead (see HandleError/HandleErrorCore below).
+        controller.ErrorRaised += code => HandleError(code, controller.LastErrorException);
         controller.Diagnostic += LogDiagnostic;
 
         notifyIcon = new NotifyIcon
@@ -197,13 +202,16 @@ public sealed class TrayApp : ApplicationContext
     /// state machine (<see cref="DictationController.ErrorRaised"/>) or from
     /// the model lifecycle (missing/unloadable/undownloadable model). The
     /// icon always reflects the error; the dialog itself is deferred if one
-    /// is already on screen.
+    /// is already on screen. <paramref name="exception"/> is whatever the
+    /// caller actually has in hand for this specific code — never read from
+    /// a different, possibly stale source — so the log always attaches the
+    /// real cause instead of an unrelated earlier exception.
     /// </summary>
-    private void HandleError(string code) => SafeInvoke(() => HandleErrorCore(code));
+    private void HandleError(string code, Exception? exception) => SafeInvoke(() => HandleErrorCore(code, exception));
 
-    private void HandleErrorCore(string code)
+    private void HandleErrorCore(string code, Exception? exception)
     {
-        DiagnosticLog.Error(code, controller.LastErrorException);
+        DiagnosticLog.Error(code, exception);
         UpdateIcon(DictationState.Error);
 
         if (isPresentingDialog)

@@ -66,9 +66,20 @@ public static class DiagnosticLog
             return;
         }
 
-        var indented = string.Join(
-            Environment.NewLine,
-            ex.ToString().Replace("\r\n", "\n").Split('\n').Select(l => "    " + l));
-        Write($"error {code}{Environment.NewLine}{indented}");
+        // Formatting the exception (ToString(), Split, indentation) is
+        // guarded the same way the file write itself is: a hypothetical
+        // throwing Exception.ToString() override must not escape this
+        // method either — logging must never take the app down.
+        try
+        {
+            var indented = string.Join(
+                Environment.NewLine,
+                ex.ToString().Replace("\r\n", "\n").Split('\n').Select(l => "    " + l));
+            Write($"error {code}{Environment.NewLine}{indented}");
+        }
+        catch
+        {
+            Write($"error {code}");
+        }
     }
 }
