@@ -13,7 +13,7 @@ public enum DictationState
 /// Never carries the dictated text or the audio — <see cref="Characters"/>
 /// and <see cref="Samples"/> are counts, not content.
 /// </summary>
-public sealed record DictationDiagnostic(string Event, TimeSpan? Duration = null, int? Samples = null, int? Characters = null);
+public sealed record DictationDiagnostic(string Event, TimeSpan? Duration = null, int? Samples = null, int? Characters = null, int? AudioContext = null);
 
 /// <summary>
 /// Push-to-talk state machine: press -&gt; capture audio -&gt; release -&gt;
@@ -261,7 +261,7 @@ public sealed class DictationController
 
         CancelTimeout();
 
-        Diagnostic?.Invoke(new DictationDiagnostic("transcribed", Duration: result.Duration, Characters: result.Text.Length));
+        Diagnostic?.Invoke(new DictationDiagnostic("transcribed", Duration: result.Duration, Characters: result.Text.Length, AudioContext: result.AudioContext));
 
         if (string.IsNullOrEmpty(result.Text))
         {

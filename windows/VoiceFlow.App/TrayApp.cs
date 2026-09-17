@@ -171,7 +171,8 @@ public sealed class TrayApp : ApplicationContext
 
     /// <summary>
     /// Turns one <see cref="DictationController.Diagnostic"/> event into a
-    /// single log line, e.g. <c>event transcribed duration=812ms chars=42</c>
+    /// single log line, e.g.
+    /// <c>event transcribed duration=812ms chars=42 audioCtx=900</c>
     /// — only the fields the event actually carries are included, and never
     /// the dictated text itself (only its length).
     /// </summary>
@@ -192,6 +193,11 @@ public sealed class TrayApp : ApplicationContext
         if (diagnostic.Characters is { } characters)
         {
             parts.Add($"chars={characters}");
+        }
+
+        if (diagnostic.AudioContext is { } audioContext)
+        {
+            parts.Add($"audioCtx={audioContext}");
         }
 
         DiagnosticLog.Write(string.Join(' ', parts));
